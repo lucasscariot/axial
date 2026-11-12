@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ class Config:
     engine: str | None = None
     billing_project: str | None = None
     location: str | None = None
+    datasets: list[str] = field(default_factory=list)
     maximum_bytes_billed: int | None = None
     wait_timeout_seconds: float = 90.0
     billing_mode: str = "on_demand"
@@ -127,6 +128,16 @@ def check_engine(requirement: str | None, current: str | None = None) -> None:
         )
 
 
+def _datasets(v: Any) -> list[str]:
+    if v is None:
+        return []
+    if isinstance(v, str):
+        v = [x.strip() for x in v.split(",") if x.strip()]
+    if not isinstance(v, list) or not all(isinstance(x, str) and x.count(".") <= 1 for x in v):
+        raise ConfigError(f"{CONFIG_FILE}: bigquery.datasets must be a list like [project.dataset, dataset]")
+    return v
+
+
 def _section(raw: dict, name: str) -> dict:
     v = raw.get(name) or {}
     if not isinstance(v, dict):
@@ -169,6 +180,7 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         engine=raw.get("engine"),
         billing_project=bq.get("billing_project"),
         location=bq.get("location"),
+        datasets=_datasets(bq.get("datasets")),
         maximum_bytes_billed=num(bq, "maximum_bytes_billed", None, int),
         wait_timeout_seconds=num(bq, "wait_timeout_seconds", 90, float),
         billing_mode=billing.get("mode", "on_demand"),

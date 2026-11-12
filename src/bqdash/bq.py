@@ -210,6 +210,51 @@ class BigQueryWarehouse:
             self._jobs.pop(job_id, None)
         return self._state(job), rows, int(it.total_rows or len(rows))
 
+    # --- metadata (free API calls, no query jobs) ----------------------------
+
+    def list_datasets(self, project: str | None = None) -> list[dict]:
+        project = project or self.project
+        return [{"id": f"{d.project}.{d.dataset_id}"} for d in self.client.list_datasets(project=project)]
+
+    def list_tables(self, dataset: str) -> list[dict]:
+        out = []
+        for t in self.client.list_tables(dataset):
+            part = t.time_partitioning
+            out.append({
+                "id": f"{t.project}.{t.dataset_id}.{t.table_id}",
+                "type": t.table_type,
+                "partitioning": {"type": part.type_, "field": part.field} if part else None,
+                "clustering": list(t.clustering_fields or []),
+            })
+        return out
+
+    def get_table(self, table: str) -> dict:
+        t = self.client.get_table(table)
+
+        def field(f) -> dict:
+            d = {"name": f.name, "type": f.field_type, "mode": f.mode, "description": f.description}
+            if f.fields:
+                d["fields"] = [field(x) for x in f.fields]
+            return d
+
+        part = None
+        if t.time_partitioning:
+            part = {"type": t.time_partitioning.type_, "field": t.time_partitioning.field or "_PARTITIONTIME"}
+        elif t.range_partitioning:
+            part = {"type": "RANGE", "field": t.range_partitioning.field}
+        return {
+            "id": f"{t.project}.{t.dataset_id}.{t.table_id}",
+            "type": t.table_type,
+            "description": t.description,
+            "num_rows": t.num_rows,
+            "num_bytes": t.num_bytes,
+            "partitioning": part,
+            "require_partition_filter": bool(t.require_partition_filter),
+            "clustering": list(t.clustering_fields or []),
+            "view_query": t.view_query if t.table_type == "VIEW" else None,
+            "columns": [field(f) for f in t.schema],
+        }
+
     def dry_run(self, sql, params) -> DryRun:
         cfg = self._bq.QueryJobConfig(
             query_parameters=self._params(params), dry_run=True, use_query_cache=False, use_legacy_sql=False,
