@@ -75,13 +75,17 @@ export function buildSeries(tile: Tile, rows: Row[]) {
 export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: QueryMeta; rows: Row[]; height: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts | null>(null);
+  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const { xs, series, yCol } = buildSeries(tile, rows);
+  const names = series.map((s) => (tile.series ? s.name : labelOf(query, s.name)));
+  const multi = series.length > 1;
+  const isBar = tile.type === "bar";
 
   const render = () => {
     const el = ref.current;
     if (!el) return;
     // SVG keeps charts sharp and their text selectable in exported PDFs
     if (!chart.current) chart.current = echarts.init(el, undefined, { renderer: "svg" });
-    const { xs, series, yCol } = buildSeries(tile, rows);
     const xFmt = defaultFormat(query.columns[tile.x!]);
     const yFmt = tile.format ?? query.formats[yCol] ?? defaultFormat(query.columns[yCol]);
     const colors = Array.from({ length: 8 }, (_, i) => cssVar(el, `--series-${i + 1}`));
@@ -92,9 +96,6 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
     const surface = cssVar(el, "--card");
     const border = cssVar(el, "--border");
     const font = cssVar(el, "--font-sans");
-    const names = series.map((s) => (tile.series ? s.name : labelOf(query, s.name)));
-    const multi = series.length > 1;
-    const isBar = tile.type === "bar";
     const few = xs.length <= 2;
 
     const tooltipHtml = (params: any) => {
@@ -111,12 +112,10 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
       color: colors,
       animation: false,
       textStyle: { fontFamily: font, fontSize: 11, color: text2 },
-      grid: { left: 8, right: isBar || few ? 8 : 20, top: multi ? 32 : 8, bottom: 0, containLabel: true },
-      legend: multi
-        ? { top: 0, left: 0, itemWidth: isBar ? 10 : 14, itemHeight: isBar ? 10 : 2, itemGap: 16,
-            icon: isBar ? "roundRect" : "rect", itemStyle: { borderWidth: 0 }, textStyle: { color: text2, fontSize: 12, fontFamily: font },
-            formatter: (n: string) => names[series.findIndex((s) => s.name === n)] ?? n }
-        : { show: false },
+      grid: { left: 8, right: isBar || few ? 8 : 20, top: 8, bottom: 0, containLabel: true },
+      // The wrapping legend lives in normal document flow above the canvas.
+      // Keep ECharts' selection model so hidden series also leave the axes and tooltip.
+      legend: { show: false, selected: Object.fromEntries(series.map((s) => [s.name, !multi || hidden[s.name] !== true])) },
       tooltip: {
         trigger: "axis",
         className: "chart-tooltip",
@@ -155,7 +154,7 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
 
   const [fontOk, setFontOk] = useState(false);
   useEffect(() => { let live = true; fontsReady.then(() => live && setFontOk(true)); return () => { live = false; }; }, []);
-  useEffect(() => { if (fontOk) render(); }, [fontOk, tile, query, rows]);
+  useEffect(() => { if (fontOk) render(); }, [fontOk, tile, query, rows, hidden]);
   useThemeChange(() => { if (fontOk) render(); });
   useEffect(() => {
     const el = ref.current;
@@ -166,5 +165,23 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
   }, []);
 
   if (rows.length === 0) return <div className="tile-empty">No rows for this range</div>;
-  return <div ref={ref} style={{ width: "100%", height }} role="img" aria-label={`${tile.type} chart of ${String(tile.y)} by ${tile.x}`} />;
+  return (
+    <div className="chart" style={{ height }}>
+      {multi && (
+        <div className="chart-legend" role="group" aria-label="Chart legend">
+          {series.map((s, i) => (
+            <button key={s.name} type="button" className="chart-legend-item" aria-pressed={hidden[s.name] !== true}
+              onClick={() => setHidden((prev) => ({ ...prev, [s.name]: prev[s.name] !== true }))}
+              onMouseEnter={() => chart.current?.dispatchAction({ type: "highlight", seriesName: s.name })}
+              onMouseLeave={() => chart.current?.dispatchAction({ type: "downplay", seriesName: s.name })}>
+              <i className={`chart-legend-key${isBar ? " bar" : ""}`} aria-hidden
+                style={{ background: hidden[s.name] === true ? "var(--text-3)" : `var(--series-${i + 1})` }} />
+              <span>{names[i]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div ref={ref} className="chart-plot" role="img" aria-label={`${tile.type} chart of ${String(tile.y)} by ${tile.x}`} />
+    </div>
+  );
 }
