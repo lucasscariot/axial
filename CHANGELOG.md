@@ -4,6 +4,13 @@ Projects pin a compatible range in `bqdash.yaml` (`engine: ">=0.1,<0.2"`). While
 is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists them under
 **Upgrade notes**.
 
+## [0.1.1](https://github.com/lucasscariot/bqdash/compare/v0.1.0...v0.1.1) (2026-11-12)
+
+
+### Features
+
+* **tiles:** add funnel tile type ([#7](https://github.com/lucasscariot/bqdash/issues/7)) ([2203cc5](https://github.com/lucasscariot/bqdash/commit/2203cc5232f08352fa01181e83a76fdcf57a7603))
+
 ## 0.1.0 (development baseline)
 
 Initial development before automated releases. Release-please starts from this version
