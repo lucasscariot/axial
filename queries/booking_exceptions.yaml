@@ -1,0 +1,16 @@
+title: Booking exceptions
+description: Bookings that breached SLA or failed dispatch, newest first.
+dbt_models: [model.analytics.fct_booking_exceptions]
+params:
+  start_date: DATE
+  end_date: DATE
+  limit: {type: INT64, default: 500}
+columns:
+  created_at: TIMESTAMP
+  booking_id: STRING
+  exception_type: STRING
+  region: STRING
+  wait_seconds: INT64
+  gross_value: NUMERIC
+formats: {wait_seconds: duration, gross_value: money}
+cache_ttl_seconds: 60

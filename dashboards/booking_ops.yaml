@@ -1,0 +1,10 @@
+title: Booking operations
+date_range: {default_days: 7, max_days: 31}
+tiles:
+  - {type: kpi, query: bookings_daily, value: bookings, reduce: sum, span: 3}
+  - {type: kpi, query: bookings_daily, value: gross_value, reduce: sum, title: Gross booking value, span: 3}
+  - {type: kpi, query: cancellation_rate, value: cancellation_rate, title: Cancellation rate, span: 3}
+  - {type: kpi, query: cancellation_rate, value: cancelled, title: Cancelled, span: 3}
+  - {type: line, query: bookings_daily, x: day, y: bookings, span: 8}
+  - {type: bar, query: bookings_daily, x: day, y: gross_value, title: Gross value by day, span: 4}
+  - {type: table, query: booking_exceptions, span: 12}

@@ -1,0 +1,30 @@
+# Local dashboard app configuration. Paths are relative to this file.
+bigquery:
+  billing_project: my-billing-project   # project that runs (and pays for) the jobs
+  location: EU                          # job location; must match the datasets
+  maximum_bytes_billed: 10737418240     # 10 GiB per job; on-demand cap, null to disable
+  wait_timeout_seconds: 90              # how long a dashboard request waits for a job
+
+billing:
+  mode: on_demand                       # on_demand | reservation
+  price_per_tib_usd: 6.25               # used for estimated gross cost in on_demand mode
+
+execution:
+  default_cache_ttl_seconds: 120
+  max_concurrent_jobs: 4
+  row_cap: 2000
+  reconcile_interval_seconds: 30
+
+dbt:
+  manifest: dbt/manifest.json           # production deployment manifest
+  catalog: dbt/catalog.json             # optional; adds warehouse column types
+  docs_url: null                        # e.g. https://dbt-docs.internal; enables model links
+  revision: null                        # deployment revision; falls back to $DBT_REVISION, then manifest metadata
+
+display:
+  currency: GBP
+  locale: en-GB
+  slow_tile_ms: 3000
+
+storage:
+  history_db: .dash/history.sqlite3
