@@ -10,7 +10,7 @@ export type Meta = {
 };
 
 export type QueryMeta = {
-  id: string; title: string; columns: Record<string, string>; formats: Record<string, string>;
+  id: string; title: string; columns: Record<string, string>; formats: Record<string, string>; labels: Record<string, string>;
   params: Record<string, string>; sql_hash: string;
 };
 

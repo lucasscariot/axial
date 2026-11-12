@@ -9,6 +9,16 @@ let display: Meta["display"] = {
 export function setDisplay(d: Meta["display"]) { display = d; }
 export function getDisplay() { return display; }
 
+/** "bookings_due" -> "Bookings due" */
+export function humanize(col: string): string {
+  const s = col.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+export function labelOf(query: { labels?: Record<string, string> }, col: string): string {
+  return query.labels?.[col] ?? humanize(col);
+}
+
 export function defaultFormat(type: string | undefined): string {
   if (type === "INT64") return "integer";
   if (type && NUMERIC.has(type)) return "number";

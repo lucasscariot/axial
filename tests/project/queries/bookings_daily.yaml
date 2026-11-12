@@ -3,4 +3,5 @@ description: Bookings and gross booking value per day.
 params: {start_date: DATE, end_date: DATE}
 columns: {day: DATE, bookings: INT64, gross_value: NUMERIC}
 formats: {bookings: integer, gross_value: money}
+labels: {gross_value: Gross value}
 cache_ttl_seconds: 120

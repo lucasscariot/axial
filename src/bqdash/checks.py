@@ -52,6 +52,9 @@ def check_query(q: Query) -> list[Issue]:
             err(f"formats.{c}: not a declared column")
         if f not in FORMATS:
             err(f"formats.{c}: unknown format {f!r} (use one of {', '.join(sorted(FORMATS))})")
+    for c in q.labels:
+        if c not in q.columns:
+            err(f"labels.{c}: not a declared column")
     if q.cache_ttl_seconds < 0:
         err("cache_ttl_seconds must be >= 0")
     return out
