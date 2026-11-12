@@ -72,6 +72,7 @@ def test_check_reports_broken_references(cfg):
         "  - {type: line, query: missing_query, x: day, y: bookings}\n"
         "  - {type: line, query: bookings_daily, x: day, y: day, span: 13}\n"
         "  - {type: pie, query: bookings_daily}\n"
+        "  - {type: funnel, query: bookings_daily, x: day, y: [bookings, gross_value], series: day}\n"
         "  - {type: text, span: 12}\n"
         "  - {type: text, markdown: hi, query: bookings_daily}\n"
     )
@@ -92,9 +93,27 @@ def test_check_reports_broken_references(cfg):
     assert "column 'day' is DATE, expected a numeric type" in text
     assert "span must be between 1 and 12" in text
     assert "unknown tile type 'pie'" in text
+    assert "funnel tiles take a single y column" in text
+    assert "funnel tiles do not take series" in text
     assert "text tiles need a markdown string" in text
     assert "text tiles do not take a query" in text
     assert "SQL uses @end_date but it is not declared" in text
     assert "labels.nope: not a declared column" in text
     assert "required param region is not bound" in text
     assert "binds only one of start_date/end_date" in text
+
+
+def test_funnel_tile_passes_check(cfg):
+    (cfg.queries_dir / "booking_funnel.yaml").write_text(
+        "title: Booking funnel\nparams: {start_date: DATE, end_date: DATE}\n"
+        "columns: {step: STRING, sessions: INT64}\n"
+    )
+    (cfg.queries_dir / "booking_funnel.sql").write_text(
+        "SELECT step, COUNT(*) AS sessions FROM t WHERE d >= @start_date AND d < @end_date GROUP BY step"
+    )
+    (cfg.dashboards_dir / "funnel.yaml").write_text(
+        "title: Funnel\ndate_range: {default_days: 7}\n"
+        "tiles:\n  - {type: funnel, query: booking_funnel, x: step, y: sessions, span: 6}\n"
+    )
+    issues = [i for i in run_checks(Registry(cfg), "funnel") if i.level == "error"]
+    assert issues == []

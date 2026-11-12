@@ -15,7 +15,7 @@ export type QueryMeta = {
 };
 
 export type Tile = {
-  type: "kpi" | "line" | "bar" | "table" | "text"; query: string; markdown?: string; span: number; title?: string;
+  type: "kpi" | "line" | "bar" | "funnel" | "table" | "text"; query: string; markdown?: string; span: number; title?: string;
   value?: string; reduce?: string; format?: string; compare?: string;
   x?: string; y?: string | string[]; series?: string; columns?: string[]; formats?: Record<string, string>;
   height?: number;

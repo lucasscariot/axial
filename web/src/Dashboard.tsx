@@ -5,6 +5,7 @@ import { IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
 import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
 import { ChartTile } from "./tiles/Chart";
+import { FunnelTile } from "./tiles/Funnel";
 import { TableTile } from "./tiles/Table";
 import { Markdown } from "./tiles/Markdown";
 import { InspectDrawer, type InspectTarget } from "./Inspect";
@@ -12,7 +13,7 @@ import { enterPrintMode, pdfTitle, settle } from "./print";
 
 type DS = { status: "loading" | "ok" | "error"; data?: Dataset; error?: string; jobId?: string | null; requestId?: number | null; started: number };
 
-const DEFAULT_HEIGHT: Record<Tile["type"], number> = { kpi: 0, line: 220, bar: 220, table: 360, text: 0 };
+const DEFAULT_HEIGHT: Record<Tile["type"], number> = { kpi: 0, line: 220, bar: 220, funnel: 260, table: 360, text: 0 };
 
 export function tileTitle(t: Tile, def: DashboardDef) {
   if (t.title) return t.title;
@@ -272,6 +273,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
         {q && ds?.status === "ok" && ds.data && (
           tile.type === "kpi" ? <KpiTile tile={tile} query={q} rows={ds.data.rows} /> :
           tile.type === "table" ? <TableTile tile={tile} query={q} data={ds.data} /> :
+          tile.type === "funnel" ? <FunnelTile tile={tile} query={q} rows={ds.data.rows} height={height} /> :
           <ChartTile tile={tile} query={q} rows={ds.data.rows} height={height} />
         )}
       </div>

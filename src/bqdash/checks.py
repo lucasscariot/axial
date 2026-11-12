@@ -146,6 +146,13 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
                 need_col("series")
                 if isinstance(t.raw.get("y"), list) and len(t.raw["y"]) > 1:
                     err("use either series or multiple y columns, not both", tw)
+        elif t.type == "funnel":
+            need_col("x")
+            need_col("y", numeric=True)
+            if isinstance(t.raw.get("y"), list) and len(t.raw["y"]) > 1:
+                err("funnel tiles take a single y column", tw)
+            if t.raw.get("series") is not None:
+                err("funnel tiles do not take series", tw)
         elif t.type == "table":
             if t.raw.get("columns") is not None:
                 need_col("columns")

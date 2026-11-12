@@ -10,11 +10,11 @@ echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendCompone
 
 const MAX_SERIES = 8;
 
-function cssVar(el: Element, name: string) {
+export function cssVar(el: Element, name: string) {
   return getComputedStyle(el).getPropertyValue(name).trim();
 }
 
-function useThemeChange(cb: () => void) {
+export function useThemeChange(cb: () => void) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", cb);
@@ -25,7 +25,7 @@ function useThemeChange(cb: () => void) {
 
 // ECharts caches text widths per font. Measuring before Geist loads caches fallback widths
 // and clips axis labels, so charts wait for the font (or give up after 1.5 s).
-const fontsReady: Promise<unknown> = Promise.race([
+export const fontsReady: Promise<unknown> = Promise.race([
   Promise.all([
     document.fonts?.load('400 11px "Geist Variable"'),
     document.fonts?.load('400 12px "Geist Variable"'),
@@ -33,7 +33,7 @@ const fontsReady: Promise<unknown> = Promise.race([
   new Promise((r) => setTimeout(r, 1500)),
 ]);
 
-const esc = (s: string) =>
+export const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 function withAlpha(hex: string, a: number) {

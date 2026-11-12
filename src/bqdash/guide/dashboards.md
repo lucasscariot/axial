@@ -24,16 +24,20 @@ tiles:
 | `kpi` | `query`, `value` (numeric column) | `reduce`: `single` (default; the query returns 1 row), `sum`, `min`, `max`, `first`, `last`, `count`; `format` |
 | `line` | `query`, `x`, `y` (numeric column or list) | `series` (a column to split by, with a single `y`), `format` |
 | `bar` | same as `line` | same as `line` |
+| `funnel` | `query`, `x` (stage column), `y` (one numeric column) | `format` |
 | `table` | `query` | `columns` (subset and order), `formats` (per column) |
 | `text` | `markdown` (headings, lists, **bold**, *italic*, `code`, https links) | |
 
 Every tile also takes `span` (1–12, default 12), `title`, and `height` (px; defaults are
-kpi 64, charts 200, table 330).
+kpi 64, charts 200, funnel 260, table 330).
 
 ## Layout guidance
 
 - Put the headline KPIs on the first row, 3–4 per row (`span: 3` or `4`).
 - Put trends (`line`) wide (`span: 8–12`) and breakdowns (`bar`) narrower.
+- A `funnel` draws one row per stage, in the order the query returns them, so end the SQL
+  with an `ORDER BY` on the step. Rows that repeat a stage are summed. Each stage shows its
+  share of the first stage, and the tooltip adds the share of the previous one.
 - Put detail tables last, at `span: 12`.
 - Tiles that use the same query share one dataset and one BigQuery job, so reuse a query
   instead of writing near-duplicates.
