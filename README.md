@@ -18,10 +18,13 @@ SQL version.
 bqdash init my-ops && cd my-ops && bqdash up --fixture
 ```
 
-![A bqdash dashboard: four KPIs, a daily trend, a bar chart and an exceptions table, each tile showing its load time and an Inspect link](docs/dashboard.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/dashboard-dark.png">
+  <img alt="A bqdash dashboard: four KPIs, a daily trend, a bar chart and an exceptions table, each tile showing its load time" src="docs/dashboard.png">
+</picture>
 
 *Illustrative data from the test project, shown in live mode against a simulated warehouse.
-The exceptions tile is highlighted because it took over 3 seconds to load.*
+The amber dot marks a tile that took over 3 seconds to load.*
 
 ## What you get
 
@@ -30,11 +33,14 @@ The exceptions tile is highlighted because it took over 3 seconds to load.*
   requests, like any other code.
 - **One command to launch:** `bqdash up` checks the project, your credentials and the engine
   version, then serves the dashboard on 127.0.0.1 and opens the browser.
-- **Dense by default:** compact filter bar, 30 px table rows, sticky headers,
-  right-aligned numbers, and explicit money, percent and duration formats. You choose what
-  goes on the page; bqdash decides how it looks.
-- **Cost on every tile:** **Inspect** opens the BigQuery job behind a tile: queue and
-  execution time, bytes billed, slots, cache hit, the exact SQL version and a console link.
+- **Calm and dense by default:**
+  - Geist type, hairline cards, and light, dark or system themes.
+  - Sticky table headers, right-aligned numbers, and explicit money, percent and duration
+    formats.
+  - You choose what goes on the page; bqdash decides how it looks.
+- **Cost on every tile:** hover a tile and click **Inspect** to open the BigQuery job behind
+  it: queue and execution time, bytes billed, slots, cache hit, the exact SQL version and
+  a console link.
 - **One job per query:** tiles that share a query share one job, and identical concurrent
   requests share one in-flight job. A warm reload submits nothing.
 - **Guard rails:** typed and validated params, a single read-only `SELECT` per query,
@@ -101,6 +107,7 @@ title: Daily bookings
 params: {start_date: DATE, end_date: DATE}
 columns: {day: DATE, bookings: INT64, gross_value: NUMERIC}
 formats: {gross_value: money}
+labels: {gross_value: Gross value (GBP)}     # optional display names
 ```
 
 ```sql
@@ -149,7 +156,7 @@ and markdown `text`. `bqdash guide dashboards` has the full reference.
 <td width="45%"><img src="docs/inspect.png" alt="Inspect drawer: request, BigQuery job link, queue/execution timing bar, bytes billed, slots, estimated cost, SQL version and the SQL"></td>
 <td>
 
-**Inspect** on any tile opens the run behind it:
+**Inspect** (hover any tile) opens the run behind it:
 - the filters used, and whether the result came from a new job, a shared job or the app cache
 - the BigQuery job, with a console link
 - a queue, execution and transfer timing bar
@@ -246,7 +253,7 @@ documents every key.
 | `no Google credentials found` | Run `gcloud auth application-default login` |
 | `this project needs bqdash …` | Install a version inside the project's `engine:` range |
 | A tile says the job exceeded the bytes limit | `bqdash dry-run <query>`; filter on the partition column, or raise `maximum_bytes_billed` deliberately |
-| A tile shows `truncated` | The result passed the row cap; aggregate more in SQL or add `LIMIT @limit` |
+| A tile shows **Truncated** | The result passed the row cap; aggregate more in SQL or add `LIMIT @limit` |
 | A tile timed out | The job keeps running; its stats are reconciled later. Check **Query usage** or run `bqdash reconcile` |
 | `agent files differ from this engine version` | Run `bqdash agents sync` |
 | `refusing to overwrite` on `init` | Use an empty or new directory |
