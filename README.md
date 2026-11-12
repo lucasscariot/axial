@@ -132,8 +132,8 @@ tiles:
   - {type: table, query: booking_exceptions, span: 12}
 ```
 
-The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar`, `table`
-and markdown `text`. `bqdash guide dashboards` has the full reference.
+The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar`, `funnel`,
+`table` and markdown `text`. `bqdash guide dashboards` has the full reference.
 
 ## Everyday use
 

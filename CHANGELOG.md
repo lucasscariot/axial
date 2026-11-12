@@ -33,6 +33,8 @@ First release.
   - `bqdash preview <dashboard> --pdf out.pdf` writes the same PDF headlessly (needs the
     `[screenshot]` extra).
   - Charts now render as SVG, so they stay sharp and their labels are selectable in PDFs.
+- `funnel` tiles: one stage per row in query order, with each stage's share of the first
+  and previous stages.
 - Optional `labels:` in query YAML sets column display names for legends and table headers.
 - New commands: `bqdash tables`, `schema`, `usage`, `run` and `guide`. `--json` on `check`,
   `dry-run`, `bench` and the new commands. Optional `bigquery.datasets` setting.

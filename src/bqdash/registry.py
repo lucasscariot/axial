@@ -17,7 +17,7 @@ PARAM_TYPES = {"DATE", "INT64", "FLOAT64", "NUMERIC", "STRING", "BOOL"}
 COLUMN_TYPES = PARAM_TYPES | {"TIMESTAMP", "DATETIME", "BIGNUMERIC"}
 NUMERIC_TYPES = {"INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC"}
 FORMATS = {"integer", "number", "money", "percent", "duration", "date", "text"}
-TILE_TYPES = {"kpi", "line", "bar", "table", "text"}
+TILE_TYPES = {"kpi", "line", "bar", "funnel", "table", "text"}
 REDUCERS = {"sum", "min", "max", "first", "last", "count", "single"}
 
 
