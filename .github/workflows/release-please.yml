@@ -1,0 +1,48 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        id: release
+        with:
+          token: ${{ github.token }}
+          target-branch: main
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # Explicit dispatches run CI with GITHUB_TOKEN, including on bot-created refs.
+      - name: Run CI on release pull requests
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PRS: ${{ steps.release.outputs.prs }}
+        run: |
+          jq -r '.[].headBranchName' <<< "$RELEASE_PRS" |
+          while IFS= read -r branch; do
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+          done
+      - name: Run CI on the release tag
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"

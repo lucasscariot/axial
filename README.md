@@ -288,9 +288,31 @@ The tests run against `tests/project/` and a fake warehouse, so they need no Goo
 CI also builds the wheel, creates a project from it, and rejects a stale committed UI build.
 
 **Releasing:**
-1. Bump `version` in `pyproject.toml` and update `CHANGELOG.md`, adding **Upgrade notes**
-   if projects must change.
-2. Merge, then tag `vX.Y.Z`. CI checks that the tag matches the package version.
+
+[Google's release-please](https://github.com/googleapis/release-please) maintains a release
+PR as Conventional Commits land on `main`. It updates `pyproject.toml`, the bqdash version
+in `uv.lock`, `CHANGELOG.md` and `.release-please-manifest.json` together.
+
+1. Use Conventional Commit PR titles; squash merging preserves them on `main`. While the
+   engine is 0.x, `fix:` and compatible `feat:` changes bump the patch version. Mark breaking
+   changes with `!` and a `BREAKING CHANGE:` footer to bump the minor version. From 1.0,
+   features bump minor and breaking changes bump major.
+2. Review the release PR and add **Upgrade notes** to its `CHANGELOG.md` entry when projects
+   must change. Wait for CI, then merge the release PR when ready to ship.
+3. Release-please creates the `vX.Y.Z` tag and GitHub release. CI also runs against the tag
+   and checks that it matches the package version. Install a release with, for example,
+   `uv tool install --force 'git+ssh://git@github.com/lucasscariot/bqdash.git@v0.1.1'`.
+
+The existing `0.1.0` is the development baseline, with history through `817e52c` already
+covered by its changelog notes. The next compatible change proposes `0.1.1`. Ordinary
+`chore:` and `ci:` commits do not trigger a release by themselves.
+
+The workflow uses the built-in `GITHUB_TOKEN`; no extra secret is needed. Repository
+Settings → Actions → General must allow GitHub Actions to create and approve pull requests.
+Because bot-created refs do not start ordinary workflows automatically, release-please
+explicitly dispatches CI on its release branches and tags. The release-please workflow also
+supports **Run workflow** on `main` to retry a failed run. Version bumps and tags are managed
+by release-please; maintainers decide when to release by merging its PR.
 
 ## Credits
 
