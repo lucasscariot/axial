@@ -43,6 +43,7 @@ class Query:
     params: dict[str, Param]
     columns: dict[str, str]
     formats: dict[str, str]
+    labels: dict[str, str]
     cache_ttl_seconds: int
     description: str = ""
 
@@ -56,6 +57,7 @@ class Query:
             "title": self.title,
             "columns": self.columns,
             "formats": self.formats,
+            "labels": self.labels,
             "params": {p.name: p.type for p in self.params.values()},
             "sql_hash": self.sql_hash,
         }
@@ -142,6 +144,7 @@ def load_query(yaml_path: Path, cfg: Config) -> Query:
         params=_parse_params(raw.get("params"), yaml_path),
         columns={k: str(v).upper() for k, v in (raw.get("columns") or {}).items()},
         formats=dict(raw.get("formats") or {}),
+        labels={str(k): str(v) for k, v in (raw.get("labels") or {}).items()},
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", cfg.default_cache_ttl_seconds)),
     )
 

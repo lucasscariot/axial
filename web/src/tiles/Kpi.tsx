@@ -21,11 +21,12 @@ export function KpiTile({ tile, query, rows }: { tile: Tile; query: QueryMeta; r
   const format = tile.format ?? query.formats[col] ?? defaultFormat(query.columns[col]);
   const v = reduce(rows, col, how);
   const bad = how === "single" && rows.length !== 1;
+  const exact = v === null ? "" : fmt(v, format);
+  const basis = how === "single" ? exact : `${exact} · ${how} of ${rows.length} rows`;
   return (
     <div className="kpi">
-      <div className="kpi-value" title={v === null ? "" : fmt(v, format)}>{bad ? "–" : fmt(v, format, true)}</div>
-      {bad && <div className="kpi-note bad">expected 1 row, got {rows.length}</div>}
-      {!bad && how !== "single" && <div className="kpi-note muted">{how} of {rows.length} rows</div>}
+      <div className="kpi-value" title={basis}>{bad ? "–" : fmt(v, format, true)}</div>
+      {bad && <div className="kpi-note bad">Expected 1 row, got {rows.length}</div>}
     </div>
   );
 }

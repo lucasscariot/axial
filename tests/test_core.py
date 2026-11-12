@@ -76,7 +76,7 @@ def test_check_reports_broken_references(cfg):
         "  - {type: text, markdown: hi, query: bookings_daily}\n"
     )
     (cfg.queries_dir / "bad_model.yaml").write_text(
-        "title: Bad\nparams: {start_date: DATE, region: STRING}\n"
+        "title: Bad\nparams: {start_date: DATE, region: STRING}\nlabels: {nope: X}\n"
         "columns: {n: INT64}\n"
     )
     (cfg.queries_dir / "bad_model.sql").write_text("SELECT COUNT(*) AS n FROM t WHERE d >= @start_date AND d < @end_date")
@@ -95,5 +95,6 @@ def test_check_reports_broken_references(cfg):
     assert "text tiles need a markdown string" in text
     assert "text tiles do not take a query" in text
     assert "SQL uses @end_date but it is not declared" in text
+    assert "labels.nope: not a declared column" in text
     assert "required param region is not bound" in text
     assert "binds only one of start_date/end_date" in text

@@ -12,20 +12,31 @@ function useRange() {
   return [range, setRange] as const;
 }
 
-function RangeBar({ range, setRange, title }: { range: { start: string; end: string }; setRange: (r: { start: string; end: string }) => void; title: React.ReactNode }) {
+function RangeBar({ range, setRange, title, sub }: { range: { start: string; end: string }; setRange: (r: { start: string; end: string }) => void; title: React.ReactNode; sub?: React.ReactNode }) {
   const end0 = addDays(todayIso(), 1);
   return (
-    <div className="filterbar">
-      <h1 className="dash-title">{title}</h1>
-      <label className="field"><span>From</span><input type="date" value={range.start} onChange={(e) => e.target.value && setRange({ ...range, start: e.target.value })} /></label>
-      <label className="field"><span>To</span><input type="date" value={addDays(range.end, -1)} onChange={(e) => e.target.value && setRange({ ...range, end: addDays(e.target.value, 1) })} /></label>
-      <div className="presets">
-        {[1, 7, 30, 90].map((n) => {
-          const r = { start: addDays(end0, -n), end: end0 };
-          return <button key={n} className={range.start === r.start && range.end === r.end ? "on" : ""} onClick={() => setRange(r)}>{n === 1 ? "Today" : `${n}d`}</button>;
-        })}
+    <>
+      <header className="page-head">
+        <div className="page-head-text">
+          <h1 className="page-title">{title}</h1>
+          {sub && <p className="page-sub">{sub}</p>}
+        </div>
+      </header>
+      <div className="toolbar">
+        <div className="segmented" role="group" aria-label="Date range presets">
+          {[1, 7, 30, 90].map((n) => {
+            const r = { start: addDays(end0, -n), end: end0 };
+            const on = range.start === r.start && range.end === r.end;
+            return <button key={n} aria-pressed={on} className={on ? "on" : ""} onClick={() => setRange(r)}>{n === 1 ? "Today" : `${n}d`}</button>;
+          })}
+        </div>
+        <div className="date-range">
+          <input type="date" aria-label="From" value={range.start} onChange={(e) => e.target.value && setRange({ ...range, start: e.target.value })} />
+          <span className="date-arrow" aria-hidden>→</span>
+          <input type="date" aria-label="To" value={addDays(range.end, -1)} onChange={(e) => e.target.value && setRange({ ...range, end: addDays(e.target.value, 1) })} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -42,11 +53,11 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
   const onDemand = getDisplay().billing_mode === "on_demand";
   return (
     <main className="page">
-      <RangeBar range={range} setRange={setRange} title="Query usage" />
+      <RangeBar range={range} setRange={setRange} title="Usage" sub="Requests, BigQuery jobs and cost per saved query" />
       <FixtureNote meta={meta} />
       {err && <div className="banner error">{err}</div>}
       {d && (
-        <div className="tile">
+        <div className="card flush">
           <div className="table-wrap">
             <table className="dense">
               <thead>
@@ -63,7 +74,7 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
               <tbody>
                 {d.queries.map((q: any) => (
                   <tr key={q.query_id}>
-                    <td><Link to={`/usage/${encodeURIComponent(q.query_id)}?start=${range.start}&end=${range.end}`}>{q.query_id}</Link></td>
+                    <td><Link className="mono" to={`/usage/${encodeURIComponent(q.query_id)}?start=${range.start}&end=${range.end}`}>{q.query_id}</Link></td>
                     <td className="num">{q.requests}</td>
                     <td className="num">{q.jobs}{q.jobs_unfinished ? <span className="muted"> ({q.jobs_unfinished} running)</span> : ""}</td>
                     <td className="num">{pct(q.app_cache_hit_rate)}</td>
@@ -105,20 +116,22 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
   const onDemand = getDisplay().billing_mode === "on_demand";
   return (
     <main className="page">
-      <RangeBar range={range} setRange={setRange} title={<><Link to={`/usage?start=${range.start}&end=${range.end}`}>Query usage</Link> / <code>{queryId}</code></>} />
+      <RangeBar range={range} setRange={setRange}
+        title={<><Link to={`/usage?start=${range.start}&end=${range.end}`} className="crumb">Usage</Link><span className="crumb-sep">/</span><span className="mono">{queryId}</span></>}
+        sub={d?.title} />
       <FixtureNote meta={meta} />
       {err && <div className="banner error">{err}</div>}
       {d && (
         <>
-          <section className="tile">
-            <header className="tile-head"><h2>SQL versions</h2><span className="tile-meta muted">compare like with like: same filters, BigQuery cache bypassed (<code>dash bench</code> or “Bypass caches”)</span></header>
+          <section className="card flush">
+            <header className="card-head"><h2>SQL versions</h2><p>Compare like with like: same filters, BigQuery cache bypassed (<code>bqdash bench</code> or “Bypass caches”).</p></header>
             <div className="table-wrap">
               <table className="dense">
                 <thead><tr><th>SQL</th><th>Filters</th><th>BQ cache</th><th className="num">Runs</th><th className="num">Median exec</th><th className="num">Median billed</th><th className="num">Median slot-ms</th><th>Last run</th><th>Repo</th></tr></thead>
                 <tbody>
                   {d.versions.map((v: any, i: number) => (
                     <tr key={i}>
-                      <td><code>{v.sql_hash.slice(0, 12)}</code>{v.sql_hash === d.current_sql_hash && <span className="pill">current</span>}</td>
+                      <td className="mono">{v.sql_hash.slice(0, 12)}{v.sql_hash === d.current_sql_hash && <span className="badge blue">Current</span>}</td>
                       <td className="small">{Object.entries(v.params).map(([k, x]) => `${k}=${x}`).join(" ")}</td>
                       <td>{v.bq_cache_bypassed ? "bypassed" : `${v.bq_cache_hits}/${v.runs} hits`}</td>
                       <td className="num">{v.runs}</td>
@@ -134,8 +147,8 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
               </table>
             </div>
           </section>
-          <section className="tile">
-            <header className="tile-head"><h2>Runs</h2><span className="tile-meta muted">{d.runs.length} requests · {d.totals.jobs} jobs{onDemand ? ` · ${bytes(d.totals.bytes_billed)} billed · ${usd(d.totals.est_cost_usd)}` : ` · ${d.totals.slot_hours.toFixed(3)} slot-h`}</span></header>
+          <section className="card flush">
+            <header className="card-head"><h2>Runs</h2><p>{d.runs.length} requests · {d.totals.jobs} jobs{onDemand ? ` · ${bytes(d.totals.bytes_billed)} billed · ${usd(d.totals.est_cost_usd)}` : ` · ${d.totals.slot_hours.toFixed(3)} slot-h`}</p></header>
             <div className="table-wrap">
               <table className="dense">
                 <thead><tr><th>When</th><th>Dashboard</th><th>Filters</th><th>Served by</th><th>Outcome</th><th className="num">App time</th><th className="num">Queue</th><th className="num">Exec</th><th className="num">Billed</th><th className="num">Slot-ms</th><th>BQ cache</th><th>SQL</th><th>Job</th></tr></thead>
@@ -153,7 +166,7 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
                       <td className="num">{bytes(r.job?.bytes_billed)}</td>
                       <td className="num">{r.job?.slot_ms?.toLocaleString() ?? "–"}</td>
                       <td>{r.job?.cache_hit == null ? "–" : r.job.cache_hit ? "hit" : "miss"}</td>
-                      <td><code>{r.sql_hash.slice(0, 8)}</code></td>
+                      <td className="mono">{r.sql_hash.slice(0, 8)}</td>
                       <td className="small">{r.job?.console_url ? <a href={r.job.console_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{r.job.status}</a> : r.job?.status ?? "–"}</td>
                     </tr>
                   ))}
