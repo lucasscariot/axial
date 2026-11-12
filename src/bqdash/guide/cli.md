@@ -6,6 +6,7 @@
 |---|---|
 | `bqdash check [dashboard] [--json]` | validate queries and dashboards |
 | `bqdash preview <dashboard> --fixture --screenshot out.png` | render with representative data |
+| `bqdash preview <dashboard> --fixture --pdf out.pdf` | A4 landscape PDF, as the app's Export PDF prints it |
 | `bqdash dry-run <query> [--start --end] [--json]` | byte estimate, est. cost, tables read |
 | `bqdash tables [project.dataset] [--json]` | list datasets / tables (metadata only) |
 | `bqdash schema <project.dataset.table> [--json]` | columns, partitioning, clustering |

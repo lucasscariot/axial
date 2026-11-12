@@ -252,40 +252,51 @@ def check(dashboard, as_json):
 @click.option("--fixture", is_flag=True, help="use representative data; no warehouse query")
 @click.option("--port", type=int, help="port to use (default: next free after server.port + 1)")
 @click.option("--screenshot", type=click.Path(dir_okay=False), help="save a PNG and exit (needs playwright)")
-@click.option("--width", default=1440, show_default=True)
-@click.option("--start", help="start_date for the screenshot")
-@click.option("--end", help="end_date (exclusive) for the screenshot")
-def preview(dashboard, fixture, port, screenshot, width, start, end):
-    """Render one dashboard, optionally to a PNG."""
+@click.option("--pdf", type=click.Path(dir_okay=False), help="save an A4 landscape PDF and exit (needs playwright)")
+@click.option("--width", default=1440, show_default=True, help="viewport width for --screenshot")
+@click.option("--start", help="start_date for the screenshot or PDF")
+@click.option("--end", help="end_date (exclusive) for the screenshot or PDF")
+def preview(dashboard, fixture, port, screenshot, pdf, width, start, end):
+    """Render one dashboard, optionally to a PNG or a PDF to share."""
+    if screenshot and pdf:
+        raise click.UsageError("pass --screenshot or --pdf, not both")
     cfg, reg = _project()
     _print_issues(run_checks(reg, dashboard))
     if dashboard not in reg.dashboards:
         sys.exit(1)
+    out = screenshot or pdf
+    if out:
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise click.ClickException("screenshots and PDFs need playwright: install bqdash with the [screenshot] "
+                                       "extra, then run `playwright install chromium`") from None
     server = _server(cfg, fixture, port or _free_port(cfg.port + 1))
-    qs = "&".join(f"{k}={v}" for k, v in (("start", start), ("end", end)) if v)
+    params = [(k, v) for k, v in (("start", start), ("end", end), ("print", "1" if pdf else None)) if v]
+    qs = "&".join(f"{k}={v}" for k, v in params)
     url = f"http://127.0.0.1:{server.config.port}/d/{dashboard}" + (f"?{qs}" if qs else "")
-    if not screenshot:
+    if not out:
         click.echo(url)
         server.run()
         return
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        raise click.ClickException("screenshots need playwright: install bqdash with the [screenshot] extra, "
-                                   "then run `playwright install chromium`") from None
     t = _start_in_thread(server)
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": width, "height": 900})
+            # ?print=1 lays the page out at A4 landscape's printable width (see web/src/print.ts)
+            page = browser.new_page(viewport={"width": 1030 if pdf else width, "height": 900})
             page.goto(url)
             page.wait_for_selector("[data-dashboard-ready='true']", timeout=120_000)
-            page.screenshot(path=screenshot, full_page=True)
+            if pdf:
+                page.wait_for_selector("[data-print-ready='true']", timeout=30_000)
+                page.pdf(path=pdf, print_background=True, prefer_css_page_size=True)
+            else:
+                page.screenshot(path=screenshot, full_page=True)
             browser.close()
     finally:
         server.should_exit = True
         t.join(timeout=5)
-    click.echo(f"wrote {screenshot}")
+    click.echo(f"wrote {out}")
 
 
 @main.command("dry-run")

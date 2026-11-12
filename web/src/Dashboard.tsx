@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, type Dataset, type DashboardDef, type Meta, type Tile } from "./api";
 import { addDays, daysBetween, getDisplay, humanize, labelOf, ms, todayIso } from "./format";
-import { IconInfo, IconInspect, IconReload } from "./Icons";
+import { IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
 import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
 import { ChartTile } from "./tiles/Chart";
 import { TableTile } from "./tiles/Table";
 import { Markdown } from "./tiles/Markdown";
 import { InspectDrawer, type InspectTarget } from "./Inspect";
+import { enterPrintMode, pdfTitle, settle } from "./print";
 
 type DS = { status: "loading" | "ok" | "error"; data?: Dataset; error?: string; jobId?: string | null; requestId?: number | null; started: number };
 
@@ -18,6 +19,12 @@ export function tileTitle(t: Tile, def: DashboardDef) {
   const q = def.queries[t.query];
   if (t.type === "kpi" && t.value) return q ? labelOf(q, t.value) : humanize(t.value);
   return q?.title ?? t.query;
+}
+
+// --span lets print mode restore the column span that narrow-screen CSS overrides
+function spanStyle(span: number) {
+  const v = `span ${Math.min(12, Math.max(1, span))}`;
+  return { gridColumn: v, "--span": v } as CSSProperties;
 }
 
 const fmtDay = (iso: string) =>
@@ -32,6 +39,11 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   const [inspect, setInspect] = useState<InspectTarget | null>(null);
   const [nonce, setNonce] = useState(0);
   const abort = useRef<AbortController | null>(null);
+  // "auto" (?print=1, used by `bqdash preview --pdf`) lays the page out for print without
+  // opening the dialog; "dialog" is the Export PDF button.
+  const [printing, setPrinting] = useState<"off" | "auto" | "dialog">(
+    () => new URLSearchParams(window.location.search).get("print") === "1" ? "auto" : "off");
+  const [printReady, setPrintReady] = useState(false);
 
   useEffect(() => {
     api.dashboard(id).then((d) => {
@@ -73,6 +85,48 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   const ready = def !== null && Object.values(data).length > 0 && Object.values(data).every((d) => d.status !== "loading");
   const loading = Object.values(data).some((d) => d.status === "loading");
 
+  useEffect(() => {
+    if (printing === "off" || !ready || !def || !range) return;
+    setInspect(null);
+    const restore = enterPrintMode(pdfTitle(def.title, range.start || undefined, range.end ? addDays(range.end, -1) : undefined));
+    let cancelled = false;
+    let restored = false;
+    const done = () => {
+      if (restored) return;
+      restored = true;
+      restore();
+      setPrintReady(false);
+      setPrinting("off");
+    };
+    settle().then(() => {
+      if (cancelled) return;
+      setPrintReady(true);
+      if (printing !== "dialog") return;
+      window.addEventListener("afterprint", done, { once: true });
+      window.print();
+      // Chrome and Safari block in print() until the dialog closes; afterprint covers the rest.
+      setTimeout(done, 0);
+    });
+    return () => {
+      cancelled = true;
+      window.removeEventListener("afterprint", done);
+      if (printing === "dialog") done();
+      else if (!restored) { restored = true; restore(); }
+    };
+  }, [printing, ready, def, range]);
+
+  // Cmd/Ctrl+P goes through the same path, so the PDF gets light colours and a print layout.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p" && ready) {
+        e.preventDefault();
+        setPrinting("dialog");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ready]);
+
   const onRange = useCallback((start: string, endInclusive: string) => {
     setRange({ start, end: addDays(endInclusive, 1) });
   }, []);
@@ -86,9 +140,10 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   const presets = dr ? [1, 7, 14, 28, dr.max_days].filter((n, i, a) => n <= dr.max_days && a.indexOf(n) === i) : [];
 
   return (
-    <main className="page dashboard" data-dashboard-ready={ready ? "true" : "false"}>
+    <main className="page dashboard" data-dashboard-ready={ready ? "true" : "false"} data-print-ready={printReady ? "true" : "false"}>
       <header className="page-head">
         <div className="page-head-text">
+          <p className="print-only print-brand">{meta?.display.title ?? meta?.project}</p>
           <h1 className="page-title">{def.title}</h1>
           {dr && (
             <p className="page-sub">
@@ -99,6 +154,11 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
             </p>
           )}
           {def.description && <p className="page-desc">{def.description}</p>}
+          <p className="print-only print-meta">
+            Generated {new Date().toLocaleString(getDisplay().locale, { dateStyle: "medium", timeStyle: "short" })}
+            {meta?.mode === "fixture" && <span className="dot-sep">Representative fixture data, not real figures</span>}
+            {meta?.mode === "live" && meta.display.billing_project && <span className="dot-sep">BigQuery · {meta.display.billing_project}</span>}
+          </p>
         </div>
       </header>
 
@@ -135,6 +195,10 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
         <button className="btn" onClick={() => setNonce((n) => n + 1)} title="Reload datasets (uses the cache unless bypassed)">
           <IconReload className={loading ? "spin" : ""} /> Reload
         </button>
+        <button className="btn" onClick={() => setPrinting("dialog")} disabled={!ready || printing !== "off"}
+          title={ready ? "Export as PDF: choose “Save as PDF” in the print dialog" : "Wait for every tile to load"}>
+          <IconDownload /> Export PDF
+        </button>
       </div>
 
       {def.errors.length > 0 && (
@@ -143,7 +207,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
 
       <div className="grid">
         {def.tiles.map((t, i) => t.type === "text" ? (
-          <section key={i} className="note" style={{ gridColumn: `span ${Math.min(12, Math.max(1, t.span))}` }}>
+          <section key={i} className="note" style={spanStyle(t.span)}>
             <IconInfo className="note-icon" />
             <div>
               {t.title && <h2 className="note-title">{t.title}</h2>}
@@ -176,7 +240,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
   const live = meta?.mode === "live";
   const title = tileTitle(tile, def);
   return (
-    <section className={`card tile tile-${tile.type}${slow ? " is-slow" : ""}`} style={{ gridColumn: `span ${Math.min(12, Math.max(1, tile.span))}` }}>
+    <section className={`card tile tile-${tile.type}${slow ? " is-slow" : ""}`} style={spanStyle(tile.span)}>
       <header className="tile-head">
         <h2 title={q ? `${q.title} · ${q.id}` : tile.query}>{title}</h2>
         <div className="tile-meta">

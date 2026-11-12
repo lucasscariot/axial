@@ -47,6 +47,10 @@ The amber dot marks a tile that took over 3 seconds to load.*
   `maximum_bytes_billed` on every job, a row cap and a concurrency limit.
 - **Before/after measurements:** `bqdash bench` runs a query with both caches bypassed, and
   the usage screen compares SQL versions on the same dates.
+- **Share as a PDF:** **Export PDF** in the toolbar (or Cmd/Ctrl+P) prints the dashboard as
+  it is on screen: light theme, A4 landscape, vector charts, every loaded table row, and a
+  line saying when it was generated and from what data. `bqdash preview --pdf` does the same
+  from the command line.
 - **Ready for coding agents:** every project ships with rules, three skills for Codex and
   Claude Code, and free discovery commands with JSON output.
 
@@ -144,6 +148,7 @@ and markdown `text`. `bqdash guide dashboards` has the full reference.
 | Print a query's rows (billed) | `bqdash run <query> --start 2026-11-01 --end 2026-11-08` |
 | Measure a change, caches bypassed (billed) | `bqdash bench <query> --start … --end …` |
 | Screenshot a dashboard | `bqdash preview <dashboard> --fixture --screenshot out.png` |
+| Save a dashboard as a PDF to share | **Export PDF** in the app, or `bqdash preview <dashboard> --pdf out.pdf` |
 | Read the reference for your version | `bqdash guide [queries\|dashboards\|config\|cli]` |
 | Refresh agent files after an upgrade | `bqdash agents sync` |
 
@@ -257,6 +262,7 @@ documents every key.
 | A tile timed out | The job keeps running; its stats are reconciled later. Check **Query usage** or run `bqdash reconcile` |
 | `agent files differ from this engine version` | Run `bqdash agents sync` |
 | `refusing to overwrite` on `init` | Use an empty or new directory |
+| `screenshots and PDFs need playwright` | `uv tool install --force --with-executables-from playwright 'bqdash[screenshot] @ git+ssh://git@github.com/lucasscariot/bqdash.git@main'`, then `playwright install chromium`. The in-app **Export PDF** button needs neither |
 | Wrong location errors from BigQuery | Set `bigquery.location` to where the data lives (e.g. `EU`, `US`, `europe-west2`) |
 
 ## Update or uninstall
