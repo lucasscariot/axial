@@ -1,13 +1,33 @@
-"""SQLite execution history: one row per dataset request, one row per BigQuery job."""
+"""Execution history: one row per dataset request, one row per BigQuery job.
+
+`HistoryStore` is the interface the rest of the engine uses. `SQLiteStore` is the local
+implementation; a hosted deployment can add another backend behind the same interface.
+"""
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from .config import Config
+
+SCHEMA_VERSION = 1
+
+
+class HistoryStore(Protocol):
+    def insert_job(self, **row: Any) -> None: ...
+    def update_job(self, job_id: str, **fields: Any) -> None: ...
+    def get_job(self, job_id: str) -> dict | None: ...
+    def unfinished_jobs(self, older_than_s: float = 0) -> list[dict]: ...
+    def insert_request(self, **row: Any) -> int: ...
+    def get_request(self, request_id: int) -> dict | None: ...
+    def latest_request(self, query_id: str, params_json: str | None = None) -> dict | None: ...
+    def requests_between(self, start: float, end: float, query_id: str | None = None) -> list[dict]: ...
+    def jobs_between(self, start: float, end: float, query_id: str | None = None) -> list[dict]: ...
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS query_requests (
@@ -36,9 +56,8 @@ CREATE TABLE IF NOT EXISTS bigquery_jobs (
   sql_hash        TEXT NOT NULL,
   sql_text        TEXT NOT NULL,
   params_json     TEXT NOT NULL,
-  dbt_models      TEXT,                 -- JSON list of model unique IDs
-  dbt_revision    TEXT,
-  app_revision    TEXT,                 -- git commit of this repo, '+dirty' when modified
+  app_revision    TEXT,                 -- git commit of the project, '+dirty' when queries/ is modified
+  engine_version  TEXT,
   use_query_cache INTEGER NOT NULL DEFAULT 1,
   recorded_at     REAL NOT NULL,        -- persisted before submission
   status          TEXT NOT NULL,        -- pending | running | done | not_found
@@ -65,7 +84,7 @@ JOB_STAT_FIELDS = (
 )
 
 
-class Store:
+class SQLiteStore:
     def __init__(self, path: Path | str):
         if str(path) != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -74,7 +93,12 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._lock = threading.Lock()
         with self._lock:
+            found = self._db.execute("PRAGMA user_version").fetchone()[0]
+            if found > SCHEMA_VERSION:
+                raise RuntimeError(f"history database {path} has schema {found}, newer than this engine "
+                                   f"supports ({SCHEMA_VERSION}); upgrade bqdash")
             self._db.executescript(SCHEMA)
+            self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _exec(self, sql: str, args: tuple | dict = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -91,8 +115,6 @@ class Store:
     def insert_job(self, **row: Any) -> None:
         row.setdefault("recorded_at", time.time())
         row.setdefault("status", "pending")
-        if isinstance(row.get("dbt_models"), list):
-            row["dbt_models"] = json.dumps(row["dbt_models"])
         cols = ",".join(row)
         marks = ",".join(f":{k}" for k in row)
         self._exec(f"INSERT INTO bigquery_jobs ({cols}) VALUES ({marks})", row)
@@ -108,7 +130,7 @@ class Store:
 
     def get_job(self, job_id: str) -> dict | None:
         rows = self._all("SELECT * FROM bigquery_jobs WHERE job_id=?", (job_id,))
-        return _decode_job(rows[0]) if rows else None
+        return rows[0] if rows else None
 
     def unfinished_jobs(self, older_than_s: float = 0) -> list[dict]:
         return self._all(
@@ -157,13 +179,10 @@ class Store:
         if query_id:
             sql += " AND query_id = ?"
             args.append(query_id)
-        return [_decode_job(r) for r in self._all(sql + " ORDER BY recorded_at DESC", tuple(args))]
+        return self._all(sql + " ORDER BY recorded_at DESC", tuple(args))
 
 
-def _decode_job(row: dict) -> dict:
-    if row.get("dbt_models"):
-        try:
-            row["dbt_models"] = json.loads(row["dbt_models"])
-        except ValueError:
-            pass
-    return row
+def open_store(cfg: "Config") -> HistoryStore:
+    if cfg.storage_backend == "sqlite":
+        return SQLiteStore(cfg.history_path)
+    raise ValueError(f"unsupported storage backend {cfg.storage_backend!r}")

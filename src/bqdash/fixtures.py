@@ -1,4 +1,4 @@
-"""Representative data for `dash preview --fixture`: no warehouse query is made."""
+"""Representative data for `bqdash preview --fixture`: no warehouse query is made."""
 
 from __future__ import annotations
 

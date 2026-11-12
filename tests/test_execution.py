@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from bqdash.app import create_app
 from bqdash.executor import Executor, QueryError, QueryTimeout
 from bqdash.registry import Registry
-from bqdash.store import Store
+from bqdash.store import SQLiteStore as Store
 
 from .conftest import FakeWarehouse
 
@@ -57,7 +57,7 @@ def test_job_parameters_are_native_and_bounded(client, wh, cfg):
     assert job["labels"]["dashboard"] == "booking_ops"
 
 
-def test_usage_traces_cold_job_to_sql_and_dbt(client, wh, cfg):
+def test_usage_traces_cold_job_to_sql_version(client, wh, cfg):
     load_dashboard(client)
     load_dashboard(client)
     u = client.get("/api/usage").json()
@@ -75,10 +75,8 @@ def test_usage_traces_cold_job_to_sql_and_dbt(client, wh, cfg):
     sql = (cfg.queries_dir / "bookings_daily.sql").read_text()
     assert job["sql_text"] == sql
     assert job["sql_hash"] == Registry(cfg).queries["bookings_daily"].sql_hash
-    assert job["dbt_models"] == ["model.analytics.fct_bookings"]
-    assert job["dbt_revision"].startswith("sample-0000")
+    assert job["engine_version"]
     assert job["console_url"].endswith(f"j=bq:EU:{job['job_id']}&page=queryresults")
-    assert insp["dbt_models"][0]["relation_name"].endswith("`fct_bookings`")
     assert job["exec_ms"] == 120 and job["queue_ms"] == 5
 
     runs = client.get("/api/usage/bookings_daily").json()

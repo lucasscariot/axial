@@ -10,18 +10,17 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query as Q
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .checks import run_checks
-from .config import Config
-from .dbt import DbtIndex
+from .config import Config, engine_version
 from .executor import Executor, QueryError, QueryTimeout, git_revision
 from .fixtures import fixture_rows
 from .registry import ParamError, Registry, normalize_params, resolve_params
-from .store import Store
+from .store import HistoryStore, open_store
 from .usage import job_detail, query_runs, summarize
 
 WEB_DIST = Path(__file__).parent / "web_dist"
@@ -43,20 +42,18 @@ def _day_bounds(start: str | None, end: str | None) -> tuple[float, float]:
     return to_ts(s), to_ts(e)
 
 
-def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store | None = None) -> FastAPI:
+def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: HistoryStore | None = None) -> FastAPI:
     assert mode in ("live", "fixture")
     registry = Registry(cfg)
-    dbt = DbtIndex.load(cfg)
     state: dict[str, Any] = {"executor": None}
 
     if mode == "live":
-        store = store or Store(cfg.history_db)
+        store = store or open_store(cfg)
         if warehouse is None:
             from .bq import BigQueryWarehouse
 
             warehouse = BigQueryWarehouse(cfg.billing_project, cfg.location)
-        state["executor"] = Executor(cfg, store, warehouse, dbt_revision=dbt.revision,
-                                     app_revision=git_revision(cfg.root))
+        state["executor"] = Executor(cfg, store, warehouse, app_revision=git_revision(cfg.root))
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -87,8 +84,14 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store 
 
     @app.get("/api/meta")
     def meta():
-        return {"mode": mode, "display": cfg.display(), "dbt_revision": dbt.revision,
-                "dbt_models": len(dbt.models), "dbt_docs_url": cfg.dbt_docs_url}
+        return {"mode": mode, "display": cfg.display(), "engine_version": engine_version(),
+                "project": cfg.root.name}
+
+    @app.get("/api/brand/logo", include_in_schema=False)
+    def logo():
+        if cfg.logo is None or not cfg.logo.exists():
+            raise HTTPException(404)
+        return FileResponse(cfg.logo)
 
     @app.get("/api/dashboards")
     def list_dashboards():
@@ -104,7 +107,7 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store 
             s, e = d.date_range.default()
             dr = {"default_start": s.isoformat(), "default_end": e.isoformat(), "max_days": d.date_range.max_days,
                   "start_param": d.date_range.start_param, "end_param": d.date_range.end_param}
-        issues = [i for i in run_checks(registry, dbt, d.id) if i.level == "error"]
+        issues = [i for i in run_checks(registry, d.id) if i.level == "error"]
         return {
             "id": d.id, "title": d.title, "description": d.description, "date_range": dr,
             "tiles": [{**t.raw, "type": t.type, "query": t.query, "span": t.span} for t in d.tiles],
@@ -157,17 +160,9 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store 
         store_ = ex().store
         job = store_.get_job(r["job_id"]) if r.get("job_id") else None
         q = registry.queries.get(r["query_id"])
-        models = []
-        for uid in (job or {}).get("dbt_models") or (q.dbt_models if q else []):
-            m = dbt.models.get(uid)
-            models.append({"unique_id": uid, "name": m.name if m else uid.split(".")[-1],
-                           "relation_name": m.relation_name if m else None,
-                           "description": m.description if m else None,
-                           "docs_url": dbt.docs_link(cfg.dbt_docs_url, uid), "in_manifest": m is not None})
         return {
             "request": {**r, "params": json.loads(r["params_json"])},
             "job": job_detail(cfg, job) if job else None,
-            "dbt_models": models,
             "current_sql_hash": q.sql_hash if q else None,
             "sql_changed_since": bool(q and q.sql_hash != r["sql_hash"]),
         }
@@ -212,10 +207,6 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store 
         out["current_sql_hash"] = q.sql_hash if q else None
         return out
 
-    @app.get("/api/models/search")
-    def models_search(q: str = Q(...), limit: int = 10):
-        return [{"score": s, **m.to_dict()} for s, m in dbt.search(q, limit)]
-
     # --- SPA --------------------------------------------------------------
 
     if (WEB_DIST / "assets").exists():
@@ -228,6 +219,6 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Store 
         index = WEB_DIST / "index.html"
         if index.exists():
             return FileResponse(index)
-        return HTMLResponse("<p>Frontend not built. Run <code>make web</code>.</p>", status_code=503)
+        return HTMLResponse("<p>Frontend not built. In the engine repo, run <code>make web</code>.</p>", status_code=503)
 
     return app

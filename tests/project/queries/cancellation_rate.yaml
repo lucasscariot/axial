@@ -1,6 +1,5 @@
 title: Cancellation rate
 description: Period-wide cancellation rate, computed from numerator and denominator in SQL.
-dbt_models: [model.analytics.fct_bookings]
 params: {start_date: DATE, end_date: DATE}
 columns: {cancelled: INT64, bookings: INT64, cancellation_rate: FLOAT64}
 formats: {cancellation_rate: percent}

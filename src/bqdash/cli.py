@@ -1,42 +1,62 @@
-"""`dash` command line: the authoring loop for humans and coding agents."""
+"""`bqdash` command line: create a project, launch it, and the authoring loop."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import socket
 import sys
 import threading
 import time
+import webbrowser
+from pathlib import Path
 
 import click
 
-from .checks import run_checks
-from .config import load_config
-from .dbt import DbtIndex
-from .registry import DateRange, ParamError, Registry, resolve_params
+from .checks import Issue, run_checks
+from .config import CONFIG_FILE, Config, ConfigError, engine_version, load_config
+from .registry import DateRange, ParamError, Registry, normalize_params, resolve_params
 
-DEFAULT_PORT = 8765
+TEMPLATE_DIR = Path(__file__).parent / "template"
+PORT_SEARCH = 20
 
 
-def _ctx():
+class Group(click.Group):
+    """Turns configuration problems into one-line errors instead of tracebacks."""
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except ConfigError as e:
+            raise click.ClickException(str(e)) from None
+
+
+def _project() -> tuple[Config, Registry]:
     cfg = load_config()
-    return cfg, Registry(cfg), DbtIndex.load(cfg)
+    return cfg, Registry(cfg)
 
 
-def _fmt_bytes(n: int | None) -> str:
+def _fmt_bytes(n: float | None) -> str:
     if n is None:
         return "-"
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if abs(n) < 1024 or unit == "TiB":
-            return f"{n:.1f} {unit}" if unit != "B" else f"{n} B"
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
         n /= 1024
     return str(n)
+
+
+def _print_issues(issues: list[Issue]) -> int:
+    for i in issues:
+        click.secho(str(i), fg="red" if i.level == "error" else "yellow", err=True)
+    return sum(1 for i in issues if i.level == "error")
 
 
 def _query_values(reg: Registry, query_id: str, start: str | None, end: str | None, params: tuple[str, ...]):
     q = reg.queries.get(query_id)
     if q is None:
-        raise click.ClickException(f"no query {query_id!r} (known: {', '.join(sorted(reg.queries))})")
+        raise click.ClickException(f"no query {query_id!r} (known: {', '.join(sorted(reg.queries)) or 'none'})")
     raw: dict = {}
     if "start_date" in q.params or "end_date" in q.params:
         ds, de = DateRange().default()
@@ -54,56 +74,136 @@ def _query_values(reg: Registry, query_id: str, start: str | None, end: str | No
         raise click.ClickException(str(e)) from None
 
 
-@click.group()
+def _require_bigquery(cfg: Config) -> None:
+    """Fail fast, with a fix-it message, when a live BigQuery session cannot work."""
+    if not cfg.billing_project:
+        raise click.ClickException(
+            f"bigquery.billing_project is not set. Add it to {CONFIG_FILE} "
+            "or set BQDASH_BIGQUERY_BILLING_PROJECT. (Use --fixture to run without BigQuery.)")
+    import google.auth
+    from google.auth.exceptions import DefaultCredentialsError
+
+    try:
+        google.auth.default(scopes=["https://www.googleapis.com/auth/bigquery"])
+    except DefaultCredentialsError:
+        raise click.ClickException(
+            "no Google credentials found. Run `gcloud auth application-default login` "
+            "(or use --fixture to run without BigQuery).") from None
+
+
+def _warehouse(cfg: Config):
+    from .bq import BigQueryWarehouse
+
+    _require_bigquery(cfg)
+    return BigQueryWarehouse(cfg.billing_project, cfg.location)
+
+
+def _free_port(preferred: int) -> int:
+    for port in range(preferred, preferred + PORT_SEARCH):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise click.ClickException(f"no free port in {preferred}-{preferred + PORT_SEARCH - 1}; pass --port")
+
+
+def _server(cfg: Config, fixture: bool, port: int):
+    import uvicorn
+
+    from .app import create_app
+
+    warehouse = None if fixture else _warehouse(cfg)
+    app = create_app(cfg, mode="fixture" if fixture else "live", warehouse=warehouse)
+    return uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+
+
+def _start_in_thread(server) -> threading.Thread:
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    while not server.started:
+        if not t.is_alive():
+            raise click.ClickException("the server failed to start")
+        time.sleep(0.05)
+    return t
+
+
+@click.group(cls=Group)
+@click.version_option(engine_version(), prog_name="bqdash")
 def main():
     """Local, Git-backed BigQuery dashboards."""
 
 
-# --- dbt ---------------------------------------------------------------------
+# --- project lifecycle -------------------------------------------------------
 
 
-@main.group()
-def models():
-    """Explore dbt models from the production manifest."""
+def _engine_range(v: str) -> str:
+    parts = [int(x) for x in v.split(".")[:2]]
+    major, minor = (parts + [0, 0])[:2]
+    return f">={major}.{minor},<{major}.{minor + 1}" if major == 0 else f">={major}.{minor},<{major + 1}"
 
 
-@models.command("search")
-@click.argument("text", nargs=-1, required=True)
-@click.option("--limit", default=8)
-@click.option("--json", "as_json", is_flag=True)
-def models_search(text, limit, as_json):
-    """Find dbt models by name, description, or column."""
-    cfg, _, dbt = _ctx()
-    if dbt.loaded_from is None:
-        raise click.ClickException(f"dbt manifest not found at {cfg.dbt_manifest}")
-    hits = dbt.search(" ".join(text), limit)
-    if as_json:
-        click.echo(json.dumps([m.to_dict() for _, m in hits], indent=2))
-        return
-    if not hits:
-        click.echo("no matching models")
-    for _, m in hits:
-        click.secho(m.unique_id, bold=True)
-        click.echo(f"  relation: {m.relation_name or '-'}")
-        if m.description:
-            click.echo(f"  {m.description.strip()}")
-        for c in m.columns.values():
-            desc = f"  {c.description.strip()}" if c.description else ""
-            click.echo(f"    {c.name:<28} {(c.type or ''):<10}{desc}")
-        if m.depends_on:
-            click.echo(f"  upstream: {', '.join(m.depends_on)}")
-        click.echo()
+@main.command()
+@click.argument("directory", type=click.Path(file_okay=False, path_type=Path))
+@click.option("--billing-project", help="GCP project that runs and pays for queries")
+@click.option("--location", help="BigQuery job location, e.g. EU, US, europe-west2")
+def init(directory: Path, billing_project, location):
+    """Create a dashboard project in DIRECTORY."""
+    directory = directory.resolve()
+    files = [p for p in TEMPLATE_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+    targets = {p: directory / str(p.relative_to(TEMPLATE_DIR)).replace("gitignore.txt", ".gitignore") for p in files}
+    clashes = [t for t in targets.values() if t.exists()]
+    if clashes:
+        raise click.ClickException("refusing to overwrite: " + ", ".join(str(c.relative_to(directory)) for c in clashes))
+    for src, dst in targets.items():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.name == CONFIG_FILE:
+            text = src.read_text()
+            text = text.replace("__ENGINE_RANGE__", _engine_range(engine_version()))
+            text = text.replace("__BILLING_PROJECT__", billing_project or "null  # set me")
+            text = text.replace("__LOCATION__", location or "US")
+            dst.write_text(text)
+        else:
+            shutil.copyfile(src, dst)
+    for d in ("queries", "dashboards"):
+        (directory / d).mkdir(exist_ok=True)
+    click.echo(f"Created bqdash project in {directory}\n")
+    click.echo("Next:")
+    click.echo(f"  cd {directory}")
+    click.echo("  bqdash up --fixture        # see the example dashboard with sample data")
+    if not billing_project:
+        click.echo(f"  # set bigquery.billing_project and location in {CONFIG_FILE}")
+    click.echo("  gcloud auth application-default login")
+    click.echo("  bqdash up                  # run against BigQuery")
 
 
-@models.command("show")
-@click.argument("unique_id")
-def models_show(unique_id):
-    """Print one model as JSON."""
-    _, _, dbt = _ctx()
-    m = dbt.models.get(unique_id) or next((x for x in dbt.models.values() if x.name == unique_id), None)
-    if m is None:
-        raise click.ClickException(f"no model {unique_id!r}")
-    click.echo(json.dumps(m.to_dict(), indent=2))
+@main.command()
+@click.option("--fixture", is_flag=True, help="serve representative data instead of querying BigQuery")
+@click.option("--port", type=int, help="port to use (default: server.port, or the next free one)")
+@click.option("--no-open", is_flag=True, help="do not open a browser")
+def up(fixture, port, no_open):
+    """Check the project and launch its dashboards on 127.0.0.1."""
+    cfg, reg = _project()
+    errors = _print_issues(run_checks(reg))
+    if errors:
+        raise click.ClickException(f"{errors} error(s) in dashboards or queries; fix them or run `bqdash check`")
+    server = _server(cfg, fixture, port or _free_port(cfg.port))
+    port = server.config.port
+    url = f"http://127.0.0.1:{port}/"
+    if len(reg.dashboards) == 1:
+        url += f"d/{next(iter(reg.dashboards))}"
+    click.echo(f"bqdash {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else cfg.billing_project}")
+    click.echo(url)
+    if not no_open:
+        def open_when_ready():
+            while not server.started and not server.should_exit:
+                time.sleep(0.05)
+            if server.started:
+                webbrowser.open(url)
+
+        threading.Thread(target=open_when_ready, daemon=True).start()
+    server.run()
 
 
 # --- authoring ---------------------------------------------------------------
@@ -112,15 +212,53 @@ def models_show(unique_id):
 @main.command()
 @click.argument("dashboard", required=False)
 def check(dashboard):
-    """Validate a dashboard (or everything): model IDs, query refs, tile fields, filter bindings."""
-    _, reg, dbt = _ctx()
-    issues = run_checks(reg, dbt, dashboard)
-    for i in issues:
-        click.secho(str(i), fg="red" if i.level == "error" else "yellow")
-    errors = sum(1 for i in issues if i.level == "error")
-    warnings = len(issues) - errors
-    click.echo(f"{errors} error(s), {warnings} warning(s)")
+    """Validate a dashboard (or everything): query refs, tile fields, filter bindings, SQL."""
+    _, reg = _project()
+    issues = run_checks(reg, dashboard)
+    errors = _print_issues(issues)
+    click.echo(f"{errors} error(s), {len(issues) - errors} warning(s)")
     sys.exit(1 if errors else 0)
+
+
+@main.command()
+@click.argument("dashboard")
+@click.option("--fixture", is_flag=True, help="use representative data; no warehouse query")
+@click.option("--port", type=int, help="port to use (default: next free after server.port + 1)")
+@click.option("--screenshot", type=click.Path(dir_okay=False), help="save a PNG and exit (needs playwright)")
+@click.option("--width", default=1440, show_default=True)
+@click.option("--start", help="start_date for the screenshot")
+@click.option("--end", help="end_date (exclusive) for the screenshot")
+def preview(dashboard, fixture, port, screenshot, width, start, end):
+    """Render one dashboard, optionally to a PNG."""
+    cfg, reg = _project()
+    _print_issues(run_checks(reg, dashboard))
+    if dashboard not in reg.dashboards:
+        sys.exit(1)
+    server = _server(cfg, fixture, port or _free_port(cfg.port + 1))
+    qs = "&".join(f"{k}={v}" for k, v in (("start", start), ("end", end)) if v)
+    url = f"http://127.0.0.1:{server.config.port}/d/{dashboard}" + (f"?{qs}" if qs else "")
+    if not screenshot:
+        click.echo(url)
+        server.run()
+        return
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise click.ClickException("screenshots need playwright: install bqdash with the [screenshot] extra, "
+                                   "then run `playwright install chromium`") from None
+    t = _start_in_thread(server)
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            page.goto(url)
+            page.wait_for_selector("[data-dashboard-ready='true']", timeout=120_000)
+            page.screenshot(path=screenshot, full_page=True)
+            browser.close()
+    finally:
+        server.should_exit = True
+        t.join(timeout=5)
+    click.echo(f"wrote {screenshot}")
 
 
 @main.command("dry-run")
@@ -129,29 +267,28 @@ def check(dashboard):
 @click.option("--end", help="end_date (exclusive), default tomorrow")
 @click.option("--param", "params", multiple=True, help="extra NAME=VALUE")
 def dry_run(query_id, start, end, params):
-    """Estimate bytes for a saved query with BigQuery's dry run."""
-    from .bq import BigQueryWarehouse
+    """Estimate bytes for a saved query with BigQuery's dry run (free)."""
     from .executor import bq_params
     from .sqlcheck import check_read_only_select
 
-    cfg, reg, _ = _ctx()
+    cfg, reg = _project()
     q, values = _query_values(reg, query_id, start, end, params)
     problems = check_read_only_select(q.sql)
     if problems:
         raise click.ClickException("; ".join(problems))
-    wh = BigQueryWarehouse(cfg.billing_project, cfg.location)
-    r = wh.dry_run(q.sql, bq_params(q, values))
+    r = _warehouse(cfg).dry_run(q.sql, bq_params(q, values))
     click.echo(f"query:          {q.id}  sql {q.sql_hash[:12]}")
     click.echo(f"params:         {json.dumps({k: str(v) for k, v in values.items()})}")
     click.echo(f"statement type: {r.statement_type}")
     click.echo(f"bytes estimate: {_fmt_bytes(r.bytes_processed)}")
     if cfg.billing_mode == "on_demand":
-        click.echo(f"est. cost:      ${r.bytes_processed / 2**40 * cfg.price_per_tib_usd:.4f} at ${cfg.price_per_tib_usd}/TiB")
+        click.echo(f"est. cost:      ${r.bytes_processed / 2**40 * cfg.price_per_tib_usd:.4f} "
+                   f"at ${cfg.price_per_tib_usd}/TiB")
     if cfg.maximum_bytes_billed:
         pct = r.bytes_processed / cfg.maximum_bytes_billed * 100
         click.echo(f"byte cap:       {_fmt_bytes(cfg.maximum_bytes_billed)} ({pct:.0f}% used)")
     click.echo(f"tables:         {', '.join(r.referenced_tables) or '-'}")
-    click.echo("note: estimates on clustered tables can be conservative; compare with `dash bench`.")
+    click.echo("note: estimates on clustered tables can be conservative; compare with `bqdash bench`.")
     if r.statement_type and r.statement_type != "SELECT":
         raise click.ClickException(f"statement type {r.statement_type} is not allowed")
     if cfg.maximum_bytes_billed and r.bytes_processed > cfg.maximum_bytes_billed:
@@ -166,17 +303,14 @@ def dry_run(query_id, start, end, params):
 @click.option("--runs", default=1, show_default=True)
 def bench(query_id, start, end, params, runs):
     """Run a query with both caches bypassed and record it, for before/after comparisons."""
-    from .bq import BigQueryWarehouse
     from .executor import Executor, git_revision
-    from .registry import normalize_params
-    from .store import Store
+    from .store import open_store
     from .usage import query_runs
 
-    cfg, reg, dbt = _ctx()
+    cfg, reg = _project()
     q, values = _query_values(reg, query_id, start, end, params)
-    store = Store(cfg.history_db)
-    exe = Executor(cfg, store, BigQueryWarehouse(cfg.billing_project, cfg.location),
-                   dbt_revision=dbt.revision, app_revision=git_revision(cfg.root))
+    store = open_store(cfg)
+    exe = Executor(cfg, store, _warehouse(cfg), app_revision=git_revision(cfg.root))
 
     async def go():
         for i in range(runs):
@@ -193,91 +327,19 @@ def bench(query_id, start, end, params, runs):
         if v["bq_cache_bypassed"] and v["params"] == pj:
             mark = "  <- current" if v["sql_hash"] == q.sql_hash else ""
             click.echo(f"  {v['sql_hash'][:12]}  runs {v['runs']:>3}  median exec {v['median_exec_ms']} ms  "
-                       f"median billed {_fmt_bytes(int(v['median_bytes_billed'] or 0))}  "
+                       f"median billed {_fmt_bytes(v['median_bytes_billed'] or 0)}  "
                        f"median slot {v['median_slot_ms']} ms{mark}")
 
 
 @main.command()
 def reconcile():
     """Fetch final stats for jobs the app stopped waiting for."""
-    from .bq import BigQueryWarehouse
     from .executor import Executor
-    from .store import Store
+    from .store import open_store
 
     cfg = load_config()
-    store = Store(cfg.history_db)
-    n = Executor(cfg, store, BigQueryWarehouse(cfg.billing_project, cfg.location)).reconcile_once()
+    n = Executor(cfg, open_store(cfg), _warehouse(cfg)).reconcile_once()
     click.echo(f"updated {n} job(s)")
-
-
-# --- serving -----------------------------------------------------------------
-
-
-def _serve(fixture: bool, port: int):
-    import uvicorn
-
-    from .app import create_app
-
-    cfg = load_config()
-    app = create_app(cfg, mode="fixture" if fixture else "live")
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    return uvicorn.Server(config)
-
-
-@main.command()
-@click.option("--port", default=DEFAULT_PORT, show_default=True)
-@click.option("--fixture", is_flag=True, help="serve representative data instead of querying BigQuery")
-def serve(port, fixture):
-    """Run the dashboard app on 127.0.0.1."""
-    server = _serve(fixture, port)
-    click.echo(f"http://127.0.0.1:{port}/  ({'fixture' if fixture else 'live'} mode)")
-    server.run()
-
-
-@main.command()
-@click.argument("dashboard")
-@click.option("--fixture", is_flag=True, help="use representative data; no warehouse query")
-@click.option("--port", default=DEFAULT_PORT + 1, show_default=True)
-@click.option("--screenshot", type=click.Path(dir_okay=False), help="save a PNG and exit (needs playwright)")
-@click.option("--width", default=1440, show_default=True)
-@click.option("--start", help="start_date for the screenshot")
-@click.option("--end", help="end_date (exclusive) for the screenshot")
-def preview(dashboard, fixture, port, screenshot, width, start, end):
-    """Check and render a dashboard, optionally to a PNG."""
-    _, reg, dbt = _ctx()
-    issues = run_checks(reg, dbt, dashboard)
-    for i in issues:
-        click.secho(str(i), fg="red" if i.level == "error" else "yellow", err=True)
-    if any(i.level == "error" for i in issues) and dashboard not in reg.dashboards:
-        sys.exit(1)
-    server = _serve(fixture, port)
-    qs = "&".join(f"{k}={v}" for k, v in (("start", start), ("end", end)) if v)
-    url = f"http://127.0.0.1:{port}/d/{dashboard}" + (f"?{qs}" if qs else "")
-    if not screenshot:
-        click.echo(url)
-        server.run()
-        return
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        raise click.ClickException("screenshots need playwright: uv sync --extra screenshot && "
-                                   "uv run playwright install chromium") from None
-    t = threading.Thread(target=server.run, daemon=True)
-    t.start()
-    while not server.started:
-        time.sleep(0.05)
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": width, "height": 900})
-            page.goto(url)
-            page.wait_for_selector("[data-dashboard-ready='true']", timeout=120_000)
-            page.screenshot(path=screenshot, full_page=True)
-            browser.close()
-    finally:
-        server.should_exit = True
-        t.join(timeout=5)
-    click.echo(f"wrote {screenshot}")
 
 
 if __name__ == "__main__":

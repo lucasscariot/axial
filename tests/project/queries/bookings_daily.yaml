@@ -1,6 +1,5 @@
 title: Daily bookings
 description: Bookings and gross booking value per day.
-dbt_models: [model.analytics.fct_bookings]
 params: {start_date: DATE, end_date: DATE}
 columns: {day: DATE, bookings: INT64, gross_value: NUMERIC}
 formats: {bookings: integer, gross_value: money}

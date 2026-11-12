@@ -30,7 +30,7 @@ function RangeBar({ range, setRange, title }: { range: { start: string; end: str
 }
 
 function FixtureNote({ meta }: { meta: Meta | null }) {
-  return meta?.mode === "fixture" ? <div className="banner warn">Fixture mode records no execution history. Run <code>dash serve</code> for live usage.</div> : null;
+  return meta?.mode === "fixture" ? <div className="banner warn">Fixture mode records no execution history. Run <code>bqdash up</code> for live usage.</div> : null;
 }
 
 export function UsagePage({ meta }: { meta: Meta | null }) {

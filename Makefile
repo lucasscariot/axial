@@ -1,9 +1,10 @@
-.PHONY: install web test check serve preview
+.PHONY: install web test preview
 
 install:
 	uv sync --all-extras
 	cd web && npm ci
 
+# The built UI is committed (src/bqdash/web_dist) so git installs need no Node.
 web:
 	cd web && npm run build
 
@@ -11,11 +12,6 @@ test:
 	uv run pytest -q
 	cd web && npm run typecheck
 
-check:
-	uv run dash check
-
-serve: web
-	uv run dash serve
-
+# Render the test project with fixture data
 preview: web
-	uv run dash preview booking_ops --fixture
+	cd tests/project && uv run bqdash preview booking_ops --fixture

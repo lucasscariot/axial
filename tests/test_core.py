@@ -3,7 +3,6 @@ import datetime as dt
 import pytest
 
 from bqdash.checks import run_checks
-from bqdash.dbt import DbtIndex
 from bqdash.registry import DateRange, ParamError, Registry, normalize_params, resolve_params
 from bqdash.sqlcheck import check_read_only_select, referenced_params
 
@@ -37,7 +36,7 @@ def test_referenced_params_ignores_strings_and_comments():
 
 def test_example_repo_checks_clean(cfg):
     reg = Registry(cfg)
-    issues = run_checks(reg, DbtIndex.load(cfg))
+    issues = run_checks(reg)
     assert [str(i) for i in issues if i.level == "error"] == []
 
 
@@ -73,9 +72,11 @@ def test_check_reports_broken_references(cfg):
         "  - {type: line, query: missing_query, x: day, y: bookings}\n"
         "  - {type: line, query: bookings_daily, x: day, y: day, span: 13}\n"
         "  - {type: pie, query: bookings_daily}\n"
+        "  - {type: text, span: 12}\n"
+        "  - {type: text, markdown: hi, query: bookings_daily}\n"
     )
     (cfg.queries_dir / "bad_model.yaml").write_text(
-        "title: Bad\ndbt_models: [model.analytics.fct_bookingz]\nparams: {start_date: DATE, region: STRING}\n"
+        "title: Bad\nparams: {start_date: DATE, region: STRING}\n"
         "columns: {n: INT64}\n"
     )
     (cfg.queries_dir / "bad_model.sql").write_text("SELECT COUNT(*) AS n FROM t WHERE d >= @start_date AND d < @end_date")
@@ -83,7 +84,7 @@ def test_check_reports_broken_references(cfg):
         "title: Binds\ndate_range: {default_days: 7}\ntiles:\n  - {type: table, query: bad_model}\n"
     )
     reg = Registry(cfg)
-    msgs = [str(i) for i in run_checks(reg, DbtIndex.load(cfg))]
+    msgs = [str(i) for i in run_checks(reg)]
     text = "\n".join(msgs)
     assert "column 'nope' is not in query bookings_daily" in text
     assert "reduce 'avg' not supported" in text
@@ -91,17 +92,8 @@ def test_check_reports_broken_references(cfg):
     assert "column 'day' is DATE, expected a numeric type" in text
     assert "span must be between 1 and 12" in text
     assert "unknown tile type 'pie'" in text
-    assert "fct_bookingz is not in the manifest (did you mean model.analytics.fct_bookings" in text
+    assert "text tiles need a markdown string" in text
+    assert "text tiles do not take a query" in text
     assert "SQL uses @end_date but it is not declared" in text
     assert "required param region is not bound" in text
     assert "binds only one of start_date/end_date" in text
-
-
-def test_dbt_search_prefers_marts(cfg):
-    dbt = DbtIndex.load(cfg)
-    hits = [m.name for _, m in dbt.search("bookings")]
-    assert hits[0] == "fct_bookings"
-    assert hits.index("fct_bookings") < hits.index("stg_bookings")
-    m = dbt.models["model.analytics.fct_bookings"]
-    assert m.columns["gross_value"].type == "NUMERIC"  # from catalog.json
-    assert dbt.revision.startswith("sample-0000")

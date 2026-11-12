@@ -5,11 +5,12 @@ import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
 import { ChartTile } from "./tiles/Chart";
 import { TableTile } from "./tiles/Table";
+import { Markdown } from "./tiles/Markdown";
 import { InspectDrawer, type InspectTarget } from "./Inspect";
 
 type DS = { status: "loading" | "ok" | "error"; data?: Dataset; error?: string; jobId?: string | null; requestId?: number | null; started: number };
 
-const DEFAULT_HEIGHT: Record<Tile["type"], number> = { kpi: 64, line: 200, bar: 200, table: 330 };
+const DEFAULT_HEIGHT: Record<Tile["type"], number> = { kpi: 64, line: 200, bar: 200, table: 330, text: 0 };
 
 export function tileTitle(t: Tile, def: DashboardDef) {
   if (t.title) return t.title;
@@ -112,10 +113,15 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
         <button onClick={() => setNonce((n) => n + 1)} title="Reload datasets (uses cache unless bypassed)">Reload</button>
       </div>
       {def.errors.length > 0 && (
-        <div className="banner error"><b>dash check</b> found problems:<ul>{def.errors.map((e) => <li key={e}><code>{e}</code></li>)}</ul></div>
+        <div className="banner error"><b>bqdash check</b> found problems:<ul>{def.errors.map((e) => <li key={e}><code>{e}</code></li>)}</ul></div>
       )}
       <div className="grid">
-        {def.tiles.map((t, i) => (
+        {def.tiles.map((t, i) => t.type === "text" ? (
+          <section key={i} className="tile tile-text" style={{ gridColumn: `span ${Math.min(12, Math.max(1, t.span))}` }}>
+            {t.title && <header className="tile-head"><h2>{t.title}</h2></header>}
+            <Markdown source={t.markdown ?? ""} />
+          </section>
+        ) : (
           <TileFrame key={i} tile={t} def={def} ds={data[t.query]} meta={meta}
             onInspect={() => setInspect({ kind: "latest", dashboardId: def.id, queryId: t.query, filters, requestId: data[t.query]?.data?.request_id ?? data[t.query]?.requestId ?? null })} />
         ))}
@@ -150,7 +156,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
             </span>
           )}
           {ds?.data?.truncated && <span className="pill warn" title={`Showing ${ds.data.rows.length} of ${ds.data.total_rows} rows`}>truncated</span>}
-          {live && <button className="link" onClick={onInspect} title="Inspect query: latest run, timing, job, SQL version, dbt models">Inspect</button>}
+          {live && <button className="link" onClick={onInspect} title="Inspect query: latest run, timing, job, SQL version">Inspect</button>}
         </span>
       </header>
       <div className="tile-body" style={{ height: tile.type === "kpi" ? undefined : height, minHeight: tile.type === "kpi" ? height : undefined }}>

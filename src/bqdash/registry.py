@@ -17,7 +17,7 @@ PARAM_TYPES = {"DATE", "INT64", "FLOAT64", "NUMERIC", "STRING", "BOOL"}
 COLUMN_TYPES = PARAM_TYPES | {"TIMESTAMP", "DATETIME", "BIGNUMERIC"}
 NUMERIC_TYPES = {"INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC"}
 FORMATS = {"integer", "number", "money", "percent", "duration", "date", "text"}
-TILE_TYPES = {"kpi", "line", "bar", "table"}
+TILE_TYPES = {"kpi", "line", "bar", "table", "text"}
 REDUCERS = {"sum", "min", "max", "first", "last", "count", "single"}
 
 
@@ -40,7 +40,6 @@ class Query:
     sql: str
     sql_path: Path
     yaml_path: Path
-    dbt_models: list[str]
     params: dict[str, Param]
     columns: dict[str, str]
     formats: dict[str, str]
@@ -57,7 +56,6 @@ class Query:
             "title": self.title,
             "columns": self.columns,
             "formats": self.formats,
-            "dbt_models": self.dbt_models,
             "params": {p.name: p.type for p in self.params.values()},
             "sql_hash": self.sql_hash,
         }
@@ -99,7 +97,7 @@ class Dashboard:
     def query_ids(self) -> list[str]:
         seen: list[str] = []
         for t in self.tiles:
-            if t.query not in seen:
+            if t.query and t.query not in seen:
                 seen.append(t.query)
         return seen
 
@@ -141,7 +139,6 @@ def load_query(yaml_path: Path, cfg: Config) -> Query:
         sql=sql,
         sql_path=sql_path,
         yaml_path=yaml_path,
-        dbt_models=list(raw.get("dbt_models") or []),
         params=_parse_params(raw.get("params"), yaml_path),
         columns={k: str(v).upper() for k, v in (raw.get("columns") or {}).items()},
         formats=dict(raw.get("formats") or {}),
@@ -169,7 +166,7 @@ def load_dashboard(path: Path) -> Dashboard:
         tiles.append(
             Tile(
                 type=str(t.get("type", "")),
-                query=str(t.get("query", "")),
+                query=str(t.get("query") or ""),
                 span=int(t.get("span", 12)),
                 title=t.get("title"),
                 raw=t,

@@ -1,19 +1,21 @@
 export type Meta = {
   mode: "live" | "fixture";
+  engine_version: string;
+  project: string;
   display: {
+    title: string | null; brand_color: string | null; has_logo: boolean;
     currency: string; locale: string; slow_tile_ms: number; billing_mode: "on_demand" | "reservation";
     price_per_tib_usd: number; billing_project: string | null; location: string | null; row_cap: number;
   };
-  dbt_revision: string | null;
 };
 
 export type QueryMeta = {
   id: string; title: string; columns: Record<string, string>; formats: Record<string, string>;
-  dbt_models: string[]; params: Record<string, string>; sql_hash: string;
+  params: Record<string, string>; sql_hash: string;
 };
 
 export type Tile = {
-  type: "kpi" | "line" | "bar" | "table"; query: string; span: number; title?: string;
+  type: "kpi" | "line" | "bar" | "table" | "text"; query: string; markdown?: string; span: number; title?: string;
   value?: string; reduce?: string; format?: string; compare?: string;
   x?: string; y?: string | string[]; series?: string; columns?: string[]; formats?: Record<string, string>;
   height?: number;

@@ -10,7 +10,7 @@ import pytest
 from bqdash.bq import JobFailed, JobState, SubmissionUncertain
 from bqdash.config import load_config
 
-REPO = Path(__file__).resolve().parents[1]
+PROJECT = Path(__file__).resolve().parent / "project"
 
 
 class FakeWarehouse:
@@ -83,14 +83,11 @@ class FakeWarehouse:
 
 @pytest.fixture
 def repo(tmp_path):
-    """A copy of the example repo so tests can edit queries freely."""
-    for d in ("queries", "dashboards", "dbt", "fixtures"):
-        if (REPO / d).exists():
-            shutil.copytree(REPO / d, tmp_path / d)
-    shutil.copy(REPO / "dash.yaml", tmp_path / "dash.yaml")
+    """A copy of the test project so tests can edit queries freely."""
+    shutil.copytree(PROJECT, tmp_path, dirs_exist_ok=True)
     return tmp_path
 
 
 @pytest.fixture
 def cfg(repo):
-    return load_config(repo)
+    return load_config(repo, environ={})

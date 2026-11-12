@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 node_modules/
-src/bqdash/web_dist/
-.dash/
+.bqdash/
 *.sqlite3
