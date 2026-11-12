@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
-import { CanvasRenderer } from "echarts/renderers";
+import { SVGRenderer } from "echarts/renderers";
 import type { QueryMeta, Row, Tile } from "../api";
 import { defaultFormat, fmt, labelOf } from "../format";
 
-echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
 
 const MAX_SERIES = 8;
 
@@ -79,7 +79,8 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
   const render = () => {
     const el = ref.current;
     if (!el) return;
-    if (!chart.current) chart.current = echarts.init(el, undefined, { renderer: "canvas" });
+    // SVG keeps charts sharp and their text selectable in exported PDFs
+    if (!chart.current) chart.current = echarts.init(el, undefined, { renderer: "svg" });
     const { xs, series, yCol } = buildSeries(tile, rows);
     const xFmt = defaultFormat(query.columns[tile.x!]);
     const yFmt = tile.format ?? query.formats[yCol] ?? defaultFormat(query.columns[yCol]);

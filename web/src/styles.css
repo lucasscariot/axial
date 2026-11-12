@@ -358,6 +358,42 @@ pre.sql {
   .page-title { font-size: 24px; }
   .grid > .tile-kpi { grid-column: span 12 !important; }
 }
+/* ---------- print / PDF export ----------
+   html[data-printing] is set by print.ts before the dialog opens (and by ?print=1 for
+   `bqdash preview --pdf`): the page takes the printable width of A4 landscape so charts redraw
+   at their final size, and everything interactive is removed. */
+@page { size: A4 landscape; margin: 12mm; }
+.print-only { display: none; }
+html[data-printing] body { background: #fff; }
+html[data-printing] .topnav,
+html[data-printing] .toolbar,
+html[data-printing] .tile-meta .time,
+html[data-printing] .tile-meta .icon-btn,
+html[data-printing] .drawer-backdrop { display: none !important; }
+html[data-printing] .print-only { display: block; }
+html[data-printing] .page { width: 1030px; max-width: none; margin: 0; padding: 0; }
+html[data-printing] .page-head { margin-bottom: 16px; }
+html[data-printing] .print-brand { font-size: 12px; font-weight: 600; color: var(--text-3); margin-bottom: 6px; }
+html[data-printing] .print-meta { margin-top: 8px; font-size: 12px; color: var(--text-3); }
+html[data-printing] .card { box-shadow: none; }
+html[data-printing] .tile:hover { border-color: var(--border); }
+html[data-printing] .tile, html[data-printing] .note { break-inside: avoid; }
+/* Tables print every loaded row instead of scrolling, and may run across pages */
+html[data-printing] .tile-table { break-inside: auto; }
+html[data-printing] .tile-table .tile-body { height: auto !important; }
+html[data-printing] .table-tile .table-wrap { overflow: visible; }
+html[data-printing] table.dense thead { display: table-header-group; }
+html[data-printing] table.dense th { position: static; }
+html[data-printing] table.dense tr { break-inside: avoid; }
+html[data-printing] table.dense td { max-width: 320px; }
+html[data-printing] .th-btn { display: none; }
+html[data-printing] th .th-print { display: inline; }
+/* The grid keeps its 12 columns on paper; ignore the narrow-screen collapse */
+html[data-printing] .grid > .tile, html[data-printing] .grid > .note { grid-column: var(--span) !important; }
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .topnav, .toolbar, .drawer-backdrop { display: none !important; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

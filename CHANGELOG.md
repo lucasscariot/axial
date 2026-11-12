@@ -26,6 +26,13 @@ First release.
     light, dark or system theme toggle.
   - A segmented date-range control, a cache switch, and Inspect buttons that appear on hover.
   - Charts with readable legends, line-key tooltips and an area wash.
+- PDF export:
+  - **Export PDF** in the dashboard toolbar (and Cmd/Ctrl+P) opens the print dialog with the
+    dashboard laid out for A4 landscape in the light theme. Tables print every loaded row and
+    repeat their header on each page. A line records when it was generated and from what data.
+  - `bqdash preview <dashboard> --pdf out.pdf` writes the same PDF headlessly (needs the
+    `[screenshot]` extra).
+  - Charts now render as SVG, so they stay sharp and their labels are selectable in PDFs.
 - Optional `labels:` in query YAML sets column display names for legends and table headers.
 - New commands: `bqdash tables`, `schema`, `usage`, `run` and `guide`. `--json` on `check`,
   `dry-run`, `bench` and the new commands. Optional `bigquery.datasets` setting.

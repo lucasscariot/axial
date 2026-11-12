@@ -29,6 +29,8 @@ export function TableTile({ tile, query, data }: { tile: Tile; query: QueryMeta;
           <tr>
             {cols.map((c) => (
               <th key={c} className={NUMERIC.has(query.columns[c]) ? "num" : ""} aria-sort={sort?.col === c ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                {/* Chrome drops button content from table headers repeated on printed pages */}
+                <span className="print-only th-print">{labelOf(query, c)}</span>
                 <button className="th-btn" onClick={() => onSort(c)}>
                   {labelOf(query, c)}
                   <IconSort dir={sort?.col === c ? sort.dir : 0} className={sort?.col === c ? "sort-on" : "sort-off"} />

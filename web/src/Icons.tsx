@@ -12,6 +12,9 @@ export const IconInspect = (p: SVGProps<SVGSVGElement>) => (
 export const IconReload = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" /><path d="M13.5 2.5v3h-3" /></svg>
 );
+export const IconDownload = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M8 2.5v7.5" /><path d="m4.75 7 3.25 3.25L11.25 7" /><path d="M2.75 13.25h10.5" /></svg>
+);
 export const IconSun = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" /></svg>
 );

@@ -1,5 +1,6 @@
 import os
 
+import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -73,3 +74,25 @@ def test_up_refuses_projects_with_errors(repo, monkeypatch):
 def test_engine_range_helper():
     assert _engine_range("0.1.0") == ">=0.1,<0.2"
     assert _engine_range("1.4.2") == ">=1.4,<2"
+
+
+def test_preview_takes_one_output(repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    r = CliRunner().invoke(main, ["preview", "booking_ops", "--fixture", "--pdf", "a.pdf", "--screenshot", "a.png"])
+    assert r.exit_code == 2 and "not both" in r.output
+
+
+def test_preview_exports_a_pdf(repo, monkeypatch):
+    """End to end: serve fixture data, render in Chromium, print to PDF. Needs the [screenshot] extra."""
+    pw = pytest.importorskip("playwright.sync_api")
+    with pw.sync_playwright() as p:
+        try:
+            p.chromium.launch().close()
+        except Exception:
+            pytest.skip("chromium is not installed (`playwright install chromium`)")
+    monkeypatch.chdir(repo)
+    out = repo / "booking_ops.pdf"
+    r = CliRunner().invoke(main, ["preview", "booking_ops", "--fixture", "--pdf", str(out)])
+    assert r.exit_code == 0, r.output
+    data = out.read_bytes()
+    assert data.startswith(b"%PDF") and len(data) > 10_000
