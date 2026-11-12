@@ -16,3 +16,14 @@ First release.
 - Jobs are persisted before submission and reconciled after timeouts. Query usage screen,
   Inspect drawer, `bqdash bench` for before/after comparisons.
 - Config format version 1; any value can be overridden with `BQDASH_<SECTION>_<KEY>`.
+- Agent support:
+  - `init` writes `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, and the `build-dashboard`,
+    `optimize-query` and `rebuild-dashboard` skills for Codex (`.agents/skills`) and
+    Claude Code (`.claude/skills`).
+  - `bqdash agents sync` keeps them current.
+- New commands: `bqdash tables`, `schema`, `usage`, `run` and `guide`. `--json` on `check`,
+  `dry-run`, `bench` and the new commands. Optional `bigquery.datasets` setting.
+
+**Upgrade notes:** projects created before agent support was added should run
+`bqdash agents sync --force` once, to replace the old hand-written `AGENTS.md` with the
+managed one.

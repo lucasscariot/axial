@@ -70,6 +70,25 @@ class FakeWarehouse:
             self._finish(job_id)
         return st
 
+    def list_datasets(self, project=None):
+        return [{"id": "test-project.analytics"}]
+
+    def list_tables(self, dataset):
+        return [{"id": f"{dataset}.fct_bookings", "type": "TABLE",
+                 "partitioning": {"type": "DAY", "field": "created_at"}, "clustering": ["region"]}]
+
+    def get_table(self, table):
+        return {"id": table, "type": "TABLE", "description": "One row per booking", "num_rows": 10, "num_bytes": 2048,
+                "partitioning": {"type": "DAY", "field": "created_at"}, "require_partition_filter": False,
+                "clustering": ["region"], "view_query": None,
+                "columns": [{"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE", "description": None},
+                            {"name": "region", "type": "STRING", "mode": "NULLABLE", "description": "Region"}]}
+
+    def dry_run(self, sql, params):
+        from bqdash.bq import DryRun
+
+        return DryRun(self.bytes_billed, "SELECT", ["test-project.analytics.fct_bookings"])
+
     def wait_and_fetch(self, job_id, timeout, max_rows):
         if self.delay:
             time.sleep(self.delay)

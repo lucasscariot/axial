@@ -18,7 +18,8 @@ from .checks import Issue, run_checks
 from .config import CONFIG_FILE, Config, ConfigError, engine_version, load_config
 from .registry import DateRange, ParamError, Registry, normalize_params, resolve_params
 
-TEMPLATE_DIR = Path(__file__).parent / "template"
+TEMPLATE_DIR = Path(__file__).parent / "template" / "project"
+GUIDE_DIR = Path(__file__).parent / "guide"
 PORT_SEARCH = 20
 
 
@@ -45,6 +46,17 @@ def _fmt_bytes(n: float | None) -> str:
             return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
         n /= 1024
     return str(n)
+
+
+def _json(obj) -> None:
+    click.echo(json.dumps(obj, indent=2, default=str))
+
+
+def _date_window(days: int) -> tuple[str, str]:
+    import datetime as dt
+
+    end = dt.date.today() + dt.timedelta(days=1)
+    return (end - dt.timedelta(days=days)).isoformat(), end.isoformat()
 
 
 def _print_issues(issues: list[Issue]) -> int:
@@ -168,7 +180,12 @@ def init(directory: Path, billing_project, location):
             shutil.copyfile(src, dst)
     for d in ("queries", "dashboards"):
         (directory / d).mkdir(exist_ok=True)
-    click.echo(f"Created bqdash project in {directory}\n")
+    from . import agents
+
+    agents.apply(directory, agents.plan(directory))
+    click.echo(f"Created bqdash project in {directory}")
+    click.echo("  agent files: AGENTS.md, CLAUDE.md, .agents/skills/ (Codex), .claude/skills/ (Claude Code)")
+    click.echo("  fill in CONTEXT.md so agents know your tables and metric definitions\n")
     click.echo("Next:")
     click.echo(f"  cd {directory}")
     click.echo("  bqdash up --fixture        # see the example dashboard with sample data")
@@ -193,6 +210,10 @@ def up(fixture, port, no_open):
     url = f"http://127.0.0.1:{port}/"
     if len(reg.dashboards) == 1:
         url += f"d/{next(iter(reg.dashboards))}"
+    from . import agents
+
+    if (cfg.root / "AGENTS.md").exists() and agents.stale(cfg.root):
+        click.secho("agent files differ from this engine version; run `bqdash agents sync`", fg="yellow", err=True)
     click.echo(f"bqdash {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else cfg.billing_project}")
     click.echo(url)
     if not no_open:
@@ -211,12 +232,18 @@ def up(fixture, port, no_open):
 
 @main.command()
 @click.argument("dashboard", required=False)
-def check(dashboard):
+@click.option("--json", "as_json", is_flag=True)
+def check(dashboard, as_json):
     """Validate a dashboard (or everything): query refs, tile fields, filter bindings, SQL."""
     _, reg = _project()
     issues = run_checks(reg, dashboard)
-    errors = _print_issues(issues)
-    click.echo(f"{errors} error(s), {len(issues) - errors} warning(s)")
+    errors = sum(1 for i in issues if i.level == "error")
+    if as_json:
+        _json({"errors": errors, "warnings": len(issues) - errors,
+               "issues": [{"level": i.level, "where": i.where, "message": i.message} for i in issues]})
+    else:
+        _print_issues(issues)
+        click.echo(f"{errors} error(s), {len(issues) - errors} warning(s)")
     sys.exit(1 if errors else 0)
 
 
@@ -266,7 +293,8 @@ def preview(dashboard, fixture, port, screenshot, width, start, end):
 @click.option("--start", help="start_date (inclusive), default 7 days ago")
 @click.option("--end", help="end_date (exclusive), default tomorrow")
 @click.option("--param", "params", multiple=True, help="extra NAME=VALUE")
-def dry_run(query_id, start, end, params):
+@click.option("--json", "as_json", is_flag=True)
+def dry_run(query_id, start, end, params, as_json):
     """Estimate bytes for a saved query with BigQuery's dry run (free)."""
     from .executor import bq_params
     from .sqlcheck import check_read_only_select
@@ -277,6 +305,16 @@ def dry_run(query_id, start, end, params):
     if problems:
         raise click.ClickException("; ".join(problems))
     r = _warehouse(cfg).dry_run(q.sql, bq_params(q, values))
+    over_cap = bool(cfg.maximum_bytes_billed and r.bytes_processed > cfg.maximum_bytes_billed)
+    not_select = bool(r.statement_type and r.statement_type != "SELECT")
+    if as_json:
+        _json({"query": q.id, "sql_hash": q.sql_hash, "params": {k: str(v) for k, v in values.items()},
+               "statement_type": r.statement_type, "bytes_processed": r.bytes_processed,
+               "est_cost_usd": (r.bytes_processed / 2**40 * cfg.price_per_tib_usd)
+               if cfg.billing_mode == "on_demand" else None,
+               "maximum_bytes_billed": cfg.maximum_bytes_billed, "within_cap": not over_cap,
+               "referenced_tables": r.referenced_tables})
+        sys.exit(1 if over_cap or not_select else 0)
     click.echo(f"query:          {q.id}  sql {q.sql_hash[:12]}")
     click.echo(f"params:         {json.dumps({k: str(v) for k, v in values.items()})}")
     click.echo(f"statement type: {r.statement_type}")
@@ -289,9 +327,9 @@ def dry_run(query_id, start, end, params):
         click.echo(f"byte cap:       {_fmt_bytes(cfg.maximum_bytes_billed)} ({pct:.0f}% used)")
     click.echo(f"tables:         {', '.join(r.referenced_tables) or '-'}")
     click.echo("note: estimates on clustered tables can be conservative; compare with `bqdash bench`.")
-    if r.statement_type and r.statement_type != "SELECT":
+    if not_select:
         raise click.ClickException(f"statement type {r.statement_type} is not allowed")
-    if cfg.maximum_bytes_billed and r.bytes_processed > cfg.maximum_bytes_billed:
+    if over_cap:
         raise click.ClickException("estimate exceeds maximum_bytes_billed; the job would fail")
 
 
@@ -301,7 +339,8 @@ def dry_run(query_id, start, end, params):
 @click.option("--end", help="end_date (exclusive), default tomorrow")
 @click.option("--param", "params", multiple=True, help="extra NAME=VALUE")
 @click.option("--runs", default=1, show_default=True)
-def bench(query_id, start, end, params, runs):
+@click.option("--json", "as_json", is_flag=True)
+def bench(query_id, start, end, params, runs, as_json):
     """Run a query with both caches bypassed and record it, for before/after comparisons."""
     from .executor import Executor, git_revision
     from .store import open_store
@@ -312,23 +351,208 @@ def bench(query_id, start, end, params, runs):
     store = open_store(cfg)
     exe = Executor(cfg, store, _warehouse(cfg), app_revision=git_revision(cfg.root))
 
+    jobs: list[dict] = []
+
     async def go():
         for i in range(runs):
             s = await exe.run(q, values, dashboard_id=None, bypass_cache=True)
             j = store.get_job(s.result.job_id)
+            jobs.append({k: j[k] for k in ("job_id", "exec_ms", "queue_ms", "bytes_billed", "slot_ms", "cache_hit")})
+            if as_json:
+                continue
             click.echo(f"run {i + 1}: job {j['job_id']}  exec {j['exec_ms']} ms  queue {j['queue_ms']} ms  "
                        f"billed {_fmt_bytes(j['bytes_billed'])}  slot {j['slot_ms']} ms  rows {len(s.result.rows)}")
 
     asyncio.run(go())
     out = query_runs(store, cfg, q.id, 0, time.time() + 1)
     pj = json.loads(normalize_params(values))
+    versions = [v for v in out["versions"] if v["bq_cache_bypassed"] and v["params"] == pj]
+    if as_json:
+        _json({"query": q.id, "sql_hash": q.sql_hash, "params": pj, "runs": jobs,
+               "versions": [{**v, "current": v["sql_hash"] == q.sql_hash} for v in versions]})
+        return
     click.echo("\nSQL versions for these params, BigQuery cache bypassed:")
-    for v in out["versions"]:
-        if v["bq_cache_bypassed"] and v["params"] == pj:
-            mark = "  <- current" if v["sql_hash"] == q.sql_hash else ""
-            click.echo(f"  {v['sql_hash'][:12]}  runs {v['runs']:>3}  median exec {v['median_exec_ms']} ms  "
-                       f"median billed {_fmt_bytes(v['median_bytes_billed'] or 0)}  "
-                       f"median slot {v['median_slot_ms']} ms{mark}")
+    for v in versions:
+        mark = "  <- current" if v["sql_hash"] == q.sql_hash else ""
+        click.echo(f"  {v['sql_hash'][:12]}  runs {v['runs']:>3}  median exec {v['median_exec_ms']} ms  "
+                   f"median billed {_fmt_bytes(v['median_bytes_billed'] or 0)}  "
+                   f"median slot {v['median_slot_ms']} ms{mark}")
+
+
+@main.command()
+@click.argument("query_id")
+@click.option("--start", help="start_date (inclusive), default 7 days ago")
+@click.option("--end", help="end_date (exclusive), default tomorrow")
+@click.option("--param", "params", multiple=True, help="extra NAME=VALUE")
+@click.option("--json", "as_json", is_flag=True)
+def run(query_id, start, end, params, as_json):
+    """Run a saved query once and print its rows (billed; recorded in history)."""
+    from .executor import Executor, git_revision
+    from .store import open_store
+
+    cfg, reg = _project()
+    q, values = _query_values(reg, query_id, start, end, params)
+    store = open_store(cfg)
+    exe = Executor(cfg, store, _warehouse(cfg), app_revision=git_revision(cfg.root))
+    served = asyncio.run(exe.run(q, values, dashboard_id=None))
+    r = served.result
+    job = store.get_job(r.job_id) if r.job_id else None
+    if as_json:
+        _json({"query": q.id, "params": json.loads(r.params_json), "job_id": r.job_id,
+               "bytes_billed": job and job["bytes_billed"], "exec_ms": job and job["exec_ms"],
+               "bq_cache_hit": r.cache_hit, "truncated": r.truncated, "total_rows": r.total_rows, "rows": r.rows})
+        return
+    cols = list(q.columns)
+    click.echo("\t".join(cols))
+    for row in r.rows:
+        click.echo("\t".join("" if row.get(c) is None else str(row.get(c)) for c in cols))
+    click.echo(f"-- {len(r.rows)} of {r.total_rows} rows · job {r.job_id} · billed "
+               f"{_fmt_bytes(job and job['bytes_billed'])}", err=True)
+
+
+@main.command()
+@click.argument("dataset", required=False)
+@click.option("--json", "as_json", is_flag=True)
+def tables(dataset, as_json):
+    """List tables in DATASET, or in bigquery.datasets, or the billing project's datasets (free)."""
+    cfg, _ = _project()
+    wh = _warehouse(cfg)
+    targets = [dataset] if dataset else cfg.datasets
+    if not targets:
+        rows = wh.list_datasets()
+        if as_json:
+            _json({"datasets": rows, "hint": "set bigquery.datasets in bqdash.yaml to list their tables by default"})
+        else:
+            for d in rows:
+                click.echo(d["id"])
+            click.echo("(datasets in the billing project; set bigquery.datasets to list tables)", err=True)
+        return
+    out = {}
+    for ds in targets:
+        ref = ds if "." in ds else f"{wh.project}.{ds}"
+        out[ref] = wh.list_tables(ref)
+    if as_json:
+        _json({"tables": out})
+        return
+    for ref, ts in out.items():
+        for t in ts:
+            part = f" partitioned by {t['partitioning']['field'] or '_PARTITIONTIME'}" if t["partitioning"] else ""
+            clus = f" clustered by {', '.join(t['clustering'])}" if t["clustering"] else ""
+            click.echo(f"{t['id']}  {t['type']}{part}{clus}")
+
+
+@main.command()
+@click.argument("table")
+@click.option("--json", "as_json", is_flag=True)
+def schema(table, as_json):
+    """Show a table's columns, partitioning and clustering (free)."""
+    cfg, _ = _project()
+    wh = _warehouse(cfg)
+    ref = table if table.count(".") == 2 else f"{wh.project}.{table}"
+    t = wh.get_table(ref)
+    if as_json:
+        _json(t)
+        return
+    click.secho(f"{t['id']}  {t['type']}", bold=True)
+    if t["description"]:
+        click.echo(f"  {t['description']}")
+    if t["num_rows"] is not None:
+        click.echo(f"  {t['num_rows']:,} rows · {_fmt_bytes(t['num_bytes'])}")
+    if t["partitioning"]:
+        req = " (partition filter required)" if t["require_partition_filter"] else ""
+        click.echo(f"  partitioned by {t['partitioning']['field']} ({t['partitioning']['type']}){req}")
+    if t["clustering"]:
+        click.echo(f"  clustered by {', '.join(t['clustering'])}")
+
+    def show(cols, indent="    "):
+        for c in cols:
+            desc = f"  {c['description']}" if c.get("description") else ""
+            mode = "" if c.get("mode") in (None, "NULLABLE") else f" {c['mode']}"
+            click.echo(f"{indent}{c['name']:<32} {c['type']}{mode}{desc}")
+            if c.get("fields"):
+                show(c["fields"], indent + "  ")
+
+    show(t["columns"])
+
+
+@main.command()
+@click.argument("query_id", required=False)
+@click.option("--days", default=7, show_default=True, help="window ending today")
+@click.option("--json", "as_json", is_flag=True)
+def usage(query_id, days, as_json):
+    """Recorded requests, jobs and cost per saved query, or runs and SQL versions for one (free)."""
+    import datetime as dt
+
+    from .store import open_store
+    from .usage import query_runs, summarize
+
+    cfg, _ = _project()
+    s, e = _date_window(days)
+    ts = lambda d: dt.datetime.combine(dt.date.fromisoformat(d), dt.time()).timestamp()  # noqa: E731
+    store = open_store(cfg)
+    if query_id:
+        out = query_runs(store, cfg, query_id, ts(s), ts(e), limit=50)
+        if as_json:
+            _json(out)
+            return
+        click.echo(f"{query_id}: {out['totals']['jobs']} jobs, {_fmt_bytes(out['totals']['bytes_billed'])} billed "
+                   f"in the last {days} days")
+        for v in out["versions"]:
+            click.echo(f"  sql {v['sql_hash'][:12]}  {'bypassed' if v['bq_cache_bypassed'] else 'cached '}  "
+                       f"runs {v['runs']:>3}  median exec {v['median_exec_ms']} ms  "
+                       f"median billed {_fmt_bytes(v['median_bytes_billed'])}  {v['params']}")
+        return
+    out = summarize(store, cfg, ts(s), ts(e))
+    if as_json:
+        _json(out)
+        return
+    click.echo(f"{'query':<28}{'requests':>9}{'jobs':>6}{'app hit':>9}{'p95 app':>10}{'p95 bq':>10}{'billed':>12}{'cost':>10}")
+    for r in out["queries"]:
+        pct = "-" if r["app_cache_hit_rate"] is None else f"{r['app_cache_hit_rate']:.0%}"
+        ms = lambda v: "-" if v is None else f"{v:.0f}ms"  # noqa: E731
+        cost = "-" if r["est_cost_usd"] is None else f"${r['est_cost_usd']:.4f}"
+        click.echo(f"{r['query_id']:<28}{r['requests']:>9}{r['jobs']:>6}{pct:>9}{ms(r['p95_app_ms']):>10}"
+                   f"{ms(r['p95_bq_exec_ms']):>10}{_fmt_bytes(r['bytes_billed']):>12}{cost:>10}")
+
+
+@main.command()
+@click.argument("topic", required=False)
+def guide(topic):
+    """Print the reference for this engine version: queries, dashboards, config, cli."""
+    topics = sorted(p.stem for p in GUIDE_DIR.glob("*.md"))
+    if topic is None:
+        click.echo(f"bqdash {engine_version()} reference. Topics: {', '.join(topics)}\n"
+                   "Run `bqdash guide <topic>`.")
+        return
+    if topic not in topics:
+        raise click.ClickException(f"unknown topic {topic!r} (topics: {', '.join(topics)})")
+    click.echo((GUIDE_DIR / f"{topic}.md").read_text())
+
+
+@main.group()
+def agents():
+    """Manage the agent files (AGENTS.md, CLAUDE.md, skills) in this project."""
+
+
+@agents.command("sync")
+@click.option("--check", "check_only", is_flag=True, help="exit 1 if files are out of date; change nothing")
+@click.option("--force", is_flag=True, help="also overwrite agent files that are not marked as managed")
+def agents_sync(check_only, force):
+    """Write or refresh agent files from the installed engine."""
+    from . import agents as ag
+
+    cfg = load_config(check_version=False)
+    actions = ag.plan(cfg.root, force=force)
+    changes = [a for a in actions if a.status in ("create", "update", "remove")]
+    for a in actions:
+        if a.status != "unchanged":
+            note = " (not managed by bqdash; use --force to replace)" if a.status == "skip" else ""
+            click.echo(f"{a.status:<8} {a.path}{note}")
+    if check_only:
+        click.echo("up to date" if not changes else f"{len(changes)} file(s) out of date")
+        sys.exit(1 if changes else 0)
+    ag.apply(cfg.root, changes)
+    click.echo(f"{len(changes)} file(s) written" if changes else "up to date")
 
 
 @main.command()

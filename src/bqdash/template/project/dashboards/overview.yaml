@@ -5,7 +5,7 @@ tiles:
     span: 12
     markdown: |
       **Example dashboard.** Edit `dashboards/overview.yaml` and `queries/`, or ask your
-      coding agent to follow `AGENTS.md`. Run `bqdash check` after every change.
+      coding agent to build one (it reads `AGENTS.md` and `CONTEXT.md`). Run `bqdash check` after every change.
   - {type: kpi, query: orders_daily, value: orders, reduce: sum, title: Orders, span: 6}
   - {type: kpi, query: orders_daily, value: revenue, reduce: sum, title: Revenue, span: 6}
   - {type: line, query: orders_daily, x: day, y: orders, title: Orders by day, span: 6}

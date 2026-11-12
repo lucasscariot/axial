@@ -6,6 +6,7 @@ engine: "__ENGINE_RANGE__"     # bqdash versions this project works with
 bigquery:
   billing_project: __BILLING_PROJECT__
   location: __LOCATION__
+  datasets: []                        # datasets agents should explore first, e.g. [my-project.analytics]
   maximum_bytes_billed: 10737418240   # 10 GiB per job; jobs above this fail instead of billing
   wait_timeout_seconds: 90            # how long a dashboard waits before reporting a timeout
 

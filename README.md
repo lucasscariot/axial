@@ -11,7 +11,10 @@ my-ops/                 a dashboard project (its own private repo)
   queries/<id>.sql      one read-only SELECT with @params
   queries/<id>.yaml     typed params, output columns, formats, cache TTL
   dashboards/<id>.yaml  a date range and a 12-column grid of tiles
-  AGENTS.md             authoring guide for coding agents
+  CONTEXT.md            your trusted tables, metric definitions, conventions (for agents)
+  AGENTS.md, CLAUDE.md  agent rules (managed by bqdash)
+  .agents/skills/       skills for Codex           (managed by bqdash)
+  .claude/skills/       skills for Claude Code     (managed by bqdash)
   .bqdash/              local execution history (gitignored)
 ```
 
@@ -50,15 +53,48 @@ are the real limit on what dashboards can read.
 
 ## Commands
 
+**Free:** these start no billed query jobs.
+
 | Command | |
 |---|---|
-| `bqdash init <dir>` | create a project (skeleton + one example) |
-| `bqdash up [--fixture] [--port N] [--no-open]` | check and launch the project |
-| `bqdash check [dashboard]` | query references, tile fields, filter bindings, non-SELECT SQL |
+| `bqdash init <dir>` | create a project (skeleton, one example, agent files) |
+| `bqdash up [--fixture] [--port N] [--no-open]` | check and launch the project (live loads run jobs) |
+| `bqdash check [dashboard] [--json]` | query references, tile fields, filter bindings, non-SELECT SQL |
 | `bqdash preview <dashboard> --fixture [--screenshot out.png]` | render one dashboard |
-| `bqdash dry-run <query> [--start --end]` | free byte estimate vs. the cap |
-| `bqdash bench <query> [--start --end] [--runs N]` | run with both caches bypassed; compare SQL versions |
-| `bqdash reconcile` | fetch final stats for jobs the app stopped waiting for |
+| `bqdash dry-run <query> [--start --end] [--json]` | byte estimate vs. the cap, tables read |
+| `bqdash tables [project.dataset] [--json]` | list datasets and tables (metadata API) |
+| `bqdash schema <table> [--json]` | columns, partitioning, clustering |
+| `bqdash usage [query] [--days N] [--json]` | recorded requests, jobs, cost, SQL versions |
+| `bqdash guide [topic]` | reference for the installed version: queries, dashboards, config, cli |
+| `bqdash agents sync [--check] [--force]` | refresh AGENTS.md, CLAUDE.md and skills |
+
+**Billed:**
+
+| Command | |
+|---|---|
+| `bqdash run <query> [--start --end] [--json]` | run once and print rows |
+| `bqdash bench <query> [--start --end] [--runs N] [--json]` | run with both caches bypassed; compare SQL versions |
+| `bqdash reconcile` | fetch final stats for jobs the app stopped waiting for (metadata only) |
+
+## Coding agents
+
+`bqdash init` sets a project up for Codex and Claude Code:
+
+- **`AGENTS.md`:** short rules. Which commands are free and which are billed, the SQL
+  rules, and what "done" means. Codex reads it directly.
+- **`CLAUDE.md`:** imports `AGENTS.md`, because Claude Code reads `CLAUDE.md`.
+- **Three skills,** written to `.agents/skills/` (Codex) and `.claude/skills/` (Claude Code):
+  - `build-dashboard`: request → tables → SQL → dry-run → tiles → check → screenshot
+  - `optimize-query`: usage → hypothesis → bench before and after → identical results
+  - `rebuild-dashboard`: inventory an existing dashboard → build → verify numbers per metric
+- **`CONTEXT.md`:** yours. Trusted tables, metric definitions and conventions. Agents read
+  it first, and bqdash never touches it.
+
+The skills stay short and call `bqdash guide <topic>` for reference, so the details always
+match the installed engine. Generated files carry a `bqdash:managed` marker. After upgrading
+the engine, run `bqdash agents sync`; `bqdash up` warns when they're out of date. Files
+without the marker are left alone unless you pass `--force`. Set `bigquery.datasets` so
+`bqdash tables` shows agents the right datasets first.
 
 ## Project configuration
 
