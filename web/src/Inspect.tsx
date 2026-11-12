@@ -68,23 +68,11 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
                   <Row k="Bytes">{bytes(job.bytes_processed)} processed · {bytes(job.bytes_billed)} billed</Row>
                   <Row k="Slots">{job.slot_ms == null ? "–" : `${job.slot_ms.toLocaleString()} slot-ms (${job.slot_hours.toFixed(4)} slot-h)`}</Row>
                   {billing === "on_demand" && <Row k="Est. cost">{usd(job.est_cost_usd)} <span className="muted">gross, on-demand</span></Row>}
-                  <Row k="SQL version"><code>{job.sql_hash.slice(0, 12)}</code>{job.app_revision && <span className="muted"> · repo {job.app_revision}</span>}</Row>
-                  <Row k="dbt revision">{job.dbt_revision ?? "–"}</Row>
+                  <Row k="SQL version"><code>{job.sql_hash.slice(0, 12)}</code>{job.app_revision && <span className="muted"> · project commit {job.app_revision}</span>}</Row>
+                  <Row k="Engine">{job.engine_version ? `bqdash ${job.engine_version}` : "–"}</Row>
                 </dl>
               </>
             ) : <p className="muted">No BigQuery job is linked to this request.</p>}
-            <h3>dbt models</h3>
-            <ul className="plain">
-              {d.dbt_models.map((m: any) => (
-                <li key={m.unique_id}>
-                  {m.docs_url ? <a href={m.docs_url} target="_blank" rel="noreferrer">{m.name}</a> : <b>{m.name}</b>}
-                  {!m.in_manifest && <span className="pill warn">not in manifest</span>}
-                  <div className="muted small"><code>{m.relation_name ?? m.unique_id}</code></div>
-                  {m.description && <div className="small">{m.description}</div>}
-                </li>
-              ))}
-              {d.dbt_models.length === 0 && <li className="muted">None listed in the query's YAML.</li>}
-            </ul>
             {job?.sql_text && (<><h3>SQL</h3><pre className="sql">{job.sql_text}</pre></>)}
             <p><Link to={`/usage/${encodeURIComponent(req.query_id)}`}>All runs of {req.query_id} →</Link></p>
           </div>

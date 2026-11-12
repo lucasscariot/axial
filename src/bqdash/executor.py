@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .bq import JobFailed, SubmissionUncertain, Warehouse
-from .config import Config
+from .config import Config, engine_version
 from .registry import Query, normalize_params
-from .store import Store
+from .store import HistoryStore
 
 log = logging.getLogger("bqdash")
 
@@ -80,12 +80,11 @@ def _label(s: str) -> str:
 
 
 class Executor:
-    def __init__(self, cfg: Config, store: Store, warehouse: Warehouse, dbt_revision: str | None = None,
+    def __init__(self, cfg: Config, store: HistoryStore, warehouse: Warehouse,
                  app_revision: str | None = None, clock=time.time):
         self.cfg = cfg
         self.store = store
         self.wh = warehouse
-        self.dbt_revision = dbt_revision
         self.app_revision = app_revision
         self.clock = clock
         self._cache: dict[tuple, Result] = {}
@@ -153,12 +152,12 @@ class Executor:
     async def _execute(self, query: Query, values: dict[str, Any], params_json: str, dashboard_id: str | None,
                        use_query_cache: bool) -> Result:
         async with self._sem:
-            job_id = f"dash_{_label(query.id)}_{uuid.uuid4().hex}"
+            job_id = f"bqdash_{_label(query.id)}_{uuid.uuid4().hex}"
             # Persist before submission so the job is traceable even if we never hear back.
             self.store.insert_job(
                 job_id=job_id, project=self.wh.project, location=self.wh.location, query_id=query.id,
-                sql_hash=query.sql_hash, sql_text=query.sql, params_json=params_json, dbt_models=query.dbt_models,
-                dbt_revision=self.dbt_revision, app_revision=self.app_revision, use_query_cache=int(use_query_cache),
+                sql_hash=query.sql_hash, sql_text=query.sql, params_json=params_json,
+                app_revision=self.app_revision, engine_version=engine_version(), use_query_cache=int(use_query_cache),
             )
             labels = {"app": "bqdash", "query_id": _label(query.id), "sql_hash": query.sql_hash[:12]}
             if dashboard_id:

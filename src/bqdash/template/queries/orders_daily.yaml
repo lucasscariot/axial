@@ -1,0 +1,7 @@
+# Example query. Replace the table in orders_daily.sql with one of yours, or delete both files.
+title: Daily orders
+description: Orders and revenue per day.
+params: {start_date: DATE, end_date: DATE}
+columns: {day: DATE, orders: INT64, revenue: NUMERIC}
+formats: {orders: integer, revenue: money}
+cache_ttl_seconds: 120

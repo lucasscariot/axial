@@ -31,7 +31,13 @@ function Home() {
 export function App() {
   const { path } = useLocation();
   const [meta, setMeta] = useState<Meta | null>(null);
-  useEffect(() => { api.meta().then((m) => { setDisplay(m.display); setMeta(m); }, () => setMeta(null)); }, []);
+  useEffect(() => {
+    api.meta().then((m) => {
+      setDisplay(m.display);
+      if (m.display.brand_color) document.documentElement.style.setProperty("--accent", m.display.brand_color);
+      setMeta(m);
+    }, () => setMeta(null));
+  }, []);
 
   let page;
   let m: RegExpMatchArray | null;
@@ -43,11 +49,15 @@ export function App() {
   return (
     <div className="app">
       <nav className="topnav">
-        <Link to="/" className="brand">Dashboards</Link>
+        <Link to="/" className="brand">
+          {meta?.display.has_logo && <img src="/api/brand/logo" alt="" className="logo" />}
+          {meta?.display.title ?? meta?.project ?? "Dashboards"}
+        </Link>
         <Link to="/usage" className={path.startsWith("/usage") ? "active" : ""}>Query usage</Link>
         <span className="spacer" />
         {meta?.mode === "fixture" && <span className="pill warn" title="Representative data; no warehouse queries">Fixture data</span>}
         {meta?.display.billing_project && <span className="muted small">{meta.display.billing_project} · {meta.display.location}</span>}
+        {meta && <span className="muted small" title="bqdash engine version">v{meta.engine_version}</span>}
       </nav>
       {page}
     </div>

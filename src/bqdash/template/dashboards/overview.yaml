@@ -1,0 +1,12 @@
+title: Overview
+date_range: {default_days: 7, max_days: 31}
+tiles:
+  - type: text
+    span: 12
+    markdown: |
+      **Example dashboard.** Edit `dashboards/overview.yaml` and `queries/`, or ask your
+      coding agent to follow `AGENTS.md`. Run `bqdash check` after every change.
+  - {type: kpi, query: orders_daily, value: orders, reduce: sum, title: Orders, span: 6}
+  - {type: kpi, query: orders_daily, value: revenue, reduce: sum, title: Revenue, span: 6}
+  - {type: line, query: orders_daily, x: day, y: orders, title: Orders by day, span: 6}
+  - {type: bar, query: orders_daily, x: day, y: revenue, title: Revenue by day, span: 6}

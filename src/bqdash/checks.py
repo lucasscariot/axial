@@ -1,11 +1,9 @@
-"""`dash check`: validate dashboards and their saved queries without touching BigQuery."""
+"""`bqdash check`: validate dashboards and their saved queries without touching BigQuery."""
 
 from __future__ import annotations
 
-import difflib
 from dataclasses import dataclass
 
-from .dbt import DbtIndex
 from .registry import (COLUMN_TYPES, FORMATS, NUMERIC_TYPES, PARAM_TYPES, REDUCERS, TILE_TYPES, Dashboard,
                        Query, Registry)
 from .sqlcheck import check_read_only_select, referenced_params
@@ -21,7 +19,7 @@ class Issue:
         return f"{self.level.upper():7} {self.where}: {self.message}"
 
 
-def check_query(q: Query, dbt: DbtIndex) -> list[Issue]:
+def check_query(q: Query) -> list[Issue]:
     out: list[Issue] = []
     where = f"queries/{q.id}"
 
@@ -56,27 +54,10 @@ def check_query(q: Query, dbt: DbtIndex) -> list[Issue]:
             err(f"formats.{c}: unknown format {f!r} (use one of {', '.join(sorted(FORMATS))})")
     if q.cache_ttl_seconds < 0:
         err("cache_ttl_seconds must be >= 0")
-    if not q.dbt_models:
-        warn("no dbt_models listed; the usage screen cannot link this query to a model")
-    if dbt.loaded_from is None and q.dbt_models:
-        warn("dbt manifest not loaded; model IDs were not verified")
-    else:
-        sql_lower = q.sql.lower()
-        for uid in q.dbt_models:
-            m = dbt.models.get(uid)
-            if m is None:
-                close = difflib.get_close_matches(uid, list(dbt.models), n=3, cutoff=0.6) or \
-                    [x.unique_id for _, x in dbt.search(uid.split(".")[-1], limit=3)]
-                hint = f" (did you mean {', '.join(close)}?)" if close else ""
-                err(f"dbt model {uid} is not in the manifest{hint}")
-            elif m.relation_name:
-                table = m.relation_name.replace("`", "").split(".")[-1].lower()
-                if table not in sql_lower:
-                    warn(f"SQL does not reference {m.relation_name} for dbt model {uid}")
     return out
 
 
-def check_dashboard(d: Dashboard, reg: Registry, dbt: DbtIndex) -> list[Issue]:
+def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
     out: list[Issue] = []
     where = f"dashboards/{d.id}"
 
@@ -118,6 +99,15 @@ def check_dashboard(d: Dashboard, reg: Registry, dbt: DbtIndex) -> list[Issue]:
             continue
         if not 1 <= t.span <= 12:
             err("span must be between 1 and 12", tw)
+        if t.type == "text":
+            if not isinstance(t.raw.get("markdown"), str) or not t.raw["markdown"].strip():
+                err("text tiles need a markdown string", tw)
+            if t.query:
+                err("text tiles do not take a query", tw)
+            continue
+        if not t.query:
+            err("query is required", tw)
+            continue
         q = reg.queries.get(t.query)
         if q is None:
             known = ", ".join(sorted(reg.queries)) or "none"
@@ -162,7 +152,7 @@ def check_dashboard(d: Dashboard, reg: Registry, dbt: DbtIndex) -> list[Issue]:
     return out
 
 
-def run_checks(reg: Registry, dbt: DbtIndex, dashboard_id: str | None = None) -> list[Issue]:
+def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
     issues: list[Issue] = [Issue("error", str(e.path.relative_to(reg.cfg.root)), e.message) for e in reg.errors]
     if dashboard_id is not None:
         d = reg.dashboards.get(dashboard_id)
@@ -175,7 +165,7 @@ def run_checks(reg: Registry, dbt: DbtIndex, dashboard_id: str | None = None) ->
         dashboards = list(reg.dashboards.values())
         query_ids = list(reg.queries)
     for q_id in query_ids:
-        issues += check_query(reg.queries[q_id], dbt)
+        issues += check_query(reg.queries[q_id])
     for d in dashboards:
-        issues += check_dashboard(d, reg, dbt)
+        issues += check_dashboard(d, reg)
     return issues

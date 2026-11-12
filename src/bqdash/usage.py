@@ -8,7 +8,7 @@ import statistics
 from collections import defaultdict
 
 from .config import Config
-from .store import Store
+from .store import HistoryStore
 
 TIB = 2 ** 40
 
@@ -50,7 +50,7 @@ def _job_totals(cfg: Config, jobs: list[dict]) -> dict:
     }
 
 
-def summarize(store: Store, cfg: Config, start: float, end: float) -> dict:
+def summarize(store: HistoryStore, cfg: Config, start: float, end: float) -> dict:
     reqs = store.requests_between(start, end)
     jobs = store.jobs_between(start, end)
     by_q_req: dict[str, list[dict]] = defaultdict(list)
@@ -79,7 +79,7 @@ def summarize(store: Store, cfg: Config, start: float, end: float) -> dict:
             "queries": rows, "totals": totals}
 
 
-def query_runs(store: Store, cfg: Config, query_id: str, start: float, end: float, limit: int = 200) -> dict:
+def query_runs(store: HistoryStore, cfg: Config, query_id: str, start: float, end: float, limit: int = 200) -> dict:
     reqs = store.requests_between(start, end, query_id)[:limit]
     jobs = store.jobs_between(start, end, query_id)
     job_by_id = {j["job_id"]: j for j in jobs}
