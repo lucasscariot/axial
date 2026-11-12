@@ -2,9 +2,13 @@ name: ci
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main]
     tags: ["v*"]
+
+permissions:
+  contents: read
 
 jobs:
   test:

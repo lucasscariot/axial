@@ -4,9 +4,10 @@ Projects pin a compatible range in `bqdash.yaml` (`engine: ">=0.1,<0.2"`). While
 is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists them under
 **Upgrade notes**.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (development baseline)
 
-First release.
+Initial development before automated releases. Release-please starts from this version
+and adds new releases above; commits through `817e52c` are covered by these notes.
 
 - `bqdash init <dir>` scaffolds a dashboard project, and `bqdash up` checks it and launches it.
 - Saved queries (`queries/*.sql` + `*.yaml`) and dashboards (`dashboards/*.yaml`) with KPI,
