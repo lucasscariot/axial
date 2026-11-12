@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Dataset, QueryMeta, Tile } from "../api";
-import { NUMERIC, defaultFormat, fmt } from "../format";
+import { NUMERIC, defaultFormat, fmt, labelOf } from "../format";
+import { IconSort } from "../Icons";
 
 export function TableTile({ tile, query, data }: { tile: Tile; query: QueryMeta; data: Dataset }) {
   const cols = tile.columns ?? Object.keys(query.columns);
@@ -19,7 +20,7 @@ export function TableTile({ tile, query, data }: { tile: Tile; query: QueryMeta;
   const fmtOf = (c: string) => tile.formats?.[c] ?? query.formats[c] ?? defaultFormat(query.columns[c]);
   const onSort = (c: string) => setSort((s) => (s?.col === c ? (s.dir === -1 ? null : { col: c, dir: -1 }) : { col: c, dir: 1 }));
 
-  if (rows.length === 0) return <div className="tile-msg muted">No rows for this range</div>;
+  if (rows.length === 0) return <div className="tile-empty">No rows for this range</div>;
   return (
     <div className="table-tile">
     <div className="table-wrap">
@@ -27,8 +28,11 @@ export function TableTile({ tile, query, data }: { tile: Tile; query: QueryMeta;
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c} className={NUMERIC.has(query.columns[c]) ? "num" : ""} onClick={() => onSort(c)} aria-sort={sort?.col === c ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
-                {c.replace(/_/g, " ")}{sort?.col === c ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+              <th key={c} className={NUMERIC.has(query.columns[c]) ? "num" : ""} aria-sort={sort?.col === c ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                <button className="th-btn" onClick={() => onSort(c)}>
+                  {labelOf(query, c)}
+                  <IconSort dir={sort?.col === c ? sort.dir : 0} className={sort?.col === c ? "sort-on" : "sort-off"} />
+                </button>
               </th>
             ))}
           </tr>
@@ -45,8 +49,8 @@ export function TableTile({ tile, query, data }: { tile: Tile; query: QueryMeta;
         </tbody>
       </table>
     </div>
-      <div className="table-foot muted">
-        {data.truncated ? `First ${data.rows.length.toLocaleString()} of ${data.total_rows.toLocaleString()} rows (row cap)` : `${data.rows.length.toLocaleString()} rows`}
+      <div className="table-foot">
+        {data.truncated ? `First ${data.rows.length.toLocaleString()} of ${data.total_rows.toLocaleString()} rows · row cap` : `${data.rows.length.toLocaleString()} rows`}
       </div>
     </div>
   );

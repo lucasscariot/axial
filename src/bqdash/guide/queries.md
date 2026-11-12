@@ -12,6 +12,7 @@ params:
   limit: {type: INT64, default: 500}            # params with a default need no filter
 columns: {day: DATE, orders: INT64, revenue: NUMERIC}   # exact output columns and types
 formats: {orders: integer, revenue: money}      # optional display formats
+labels: {revenue: Revenue (GBP)}                # optional display names; default: "Revenue"
 cache_ttl_seconds: 120                          # optional, default from bqdash.yaml
 ```
 

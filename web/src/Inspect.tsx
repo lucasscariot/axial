@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { bytes, getDisplay, ms, usd } from "./format";
 import { Link } from "./router";
+import { IconArrowUpRight, IconX } from "./Icons";
 
 export type InspectTarget =
   | { kind: "latest"; dashboardId: string; queryId: string; filters: Record<string, string>; requestId?: number | null }
@@ -37,8 +38,11 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
     <div className="drawer-backdrop" onClick={onClose}>
       <aside className="drawer" onClick={(e) => e.stopPropagation()} aria-label="Inspect query">
         <header className="drawer-head">
-          <h2>Inspect {req ? <code>{req.query_id}</code> : "query"}</h2>
-          <button className="link" onClick={onClose} aria-label="Close">Close</button>
+          <div>
+            <p className="eyebrow">Inspect</p>
+            <h2 className="mono">{req ? req.query_id : "query"}</h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><IconX /></button>
         </header>
         {err && <div className="banner error">{err}</div>}
         {!d && !err && <div className="muted">Loading…</div>}
@@ -49,9 +53,9 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
             <h3>Request</h3>
             <dl className="kv">
               <Row k="When">{when(req.requested_at)}</Row>
-              <Row k="Filters">{Object.entries(req.params).map(([k, v]) => <div key={k}><code>{k}</code> = {String(v)}</div>)}</Row>
+              <Row k="Filters">{Object.entries(req.params).map(([k, v]) => <div key={k} className="mono">{k} = {String(v)}</div>)}</Row>
               <Row k="Served by">{req.source === "bigquery" ? "new BigQuery job" : req.source === "shared" ? "shared in-flight job" : req.source === "app_cache" ? "app cache" : req.source}{req.bypass_cache ? " (caches bypassed)" : ""}</Row>
-              <Row k="Outcome">{req.outcome}{req.error ? `: ${req.error}` : ""}</Row>
+              <Row k="Outcome"><span className={`badge ${req.outcome === "ok" ? "green" : "red"}`}>{req.outcome}</span>{req.error ? ` ${req.error}` : ""}</Row>
               <Row k="App time">{ms(req.app_ms)}</Row>
               <Row k="Rows">{req.row_count ?? "–"}{req.truncated ? " (truncated at row cap)" : ""}</Row>
             </dl>
@@ -59,8 +63,8 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
               <>
                 <h3>BigQuery job</h3>
                 <dl className="kv">
-                  <Row k="Job">{job.console_url ? <a href={job.console_url} target="_blank" rel="noreferrer"><code>{job.job_id}</code></a> : <code>{job.job_id}</code>}</Row>
-                  <Row k="Status">{job.status}{job.outcome ? ` · ${job.outcome}` : ""}{job.error ? `: ${job.error}` : ""}</Row>
+                  <Row k="Job">{job.console_url ? <a className="mono ext" href={job.console_url} target="_blank" rel="noreferrer">{job.job_id}<IconArrowUpRight /></a> : <span className="mono">{job.job_id}</span>}</Row>
+                  <Row k="Status"><span className={`badge ${job.outcome === "success" ? "green" : job.outcome === "error" ? "red" : "gray"}`}>{job.outcome ?? job.status}</span>{job.error ? ` ${job.error}` : ""}</Row>
                   <Row k="Timing">
                     <TimingBar queue={job.queue_ms} exec={job.exec_ms} app={req.source === "bigquery" ? req.app_ms : null} />
                   </Row>
@@ -68,13 +72,13 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
                   <Row k="Bytes">{bytes(job.bytes_processed)} processed · {bytes(job.bytes_billed)} billed</Row>
                   <Row k="Slots">{job.slot_ms == null ? "–" : `${job.slot_ms.toLocaleString()} slot-ms (${job.slot_hours.toFixed(4)} slot-h)`}</Row>
                   {billing === "on_demand" && <Row k="Est. cost">{usd(job.est_cost_usd)} <span className="muted">gross, on-demand</span></Row>}
-                  <Row k="SQL version"><code>{job.sql_hash.slice(0, 12)}</code>{job.app_revision && <span className="muted"> · project commit {job.app_revision}</span>}</Row>
+                  <Row k="SQL version"><span className="mono">{job.sql_hash.slice(0, 12)}</span>{job.app_revision && <span className="muted"> · project commit {job.app_revision}</span>}</Row>
                   <Row k="Engine">{job.engine_version ? `bqdash ${job.engine_version}` : "–"}</Row>
                 </dl>
               </>
             ) : <p className="muted">No BigQuery job is linked to this request.</p>}
             {job?.sql_text && (<><h3>SQL</h3><pre className="sql">{job.sql_text}</pre></>)}
-            <p><Link to={`/usage/${encodeURIComponent(req.query_id)}`}>All runs of {req.query_id} →</Link></p>
+            <p className="drawer-foot"><Link to={`/usage/${encodeURIComponent(req.query_id)}`}>All runs of {req.query_id} →</Link></p>
           </div>
         )}
       </aside>
@@ -95,7 +99,10 @@ function TimingBar({ queue, exec, app }: { queue: number | null; exec: number | 
       <div className="timing" aria-hidden>
         {parts.map((p) => <span key={p.k} className={`seg seg-${p.k}`} style={{ flexGrow: Math.max(p.v, total * 0.01) }} />)}
       </div>
-      <div className="small">{parts.map((p) => <span key={p.k} className="timing-label"><i className={`swatch seg-${p.k}`} />{p.label}</span>)}{app != null && <span className="muted"> · total {ms(app)}</span>}</div>
+      <div className="timing-legend">
+        {app != null && <span className="timing-total">{ms(app)} total</span>}
+        {parts.map((p) => <span key={p.k} className="timing-label"><i className={`swatch seg-${p.k}`} />{p.label}</span>)}
+      </div>
     </div>
   );
 }

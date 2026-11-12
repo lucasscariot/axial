@@ -21,6 +21,12 @@ First release.
     `optimize-query` and `rebuild-dashboard` skills for Codex (`.agents/skills`) and
     Claude Code (`.claude/skills`).
   - `bqdash agents sync` keeps them current.
+- Redesigned UI:
+  - Geist type (bundled, works offline), neutral surfaces with hairline borders, and a
+    light, dark or system theme toggle.
+  - A segmented date-range control, a cache switch, and Inspect buttons that appear on hover.
+  - Charts with readable legends, line-key tooltips and an area wash.
+- Optional `labels:` in query YAML sets column display names for legends and table headers.
 - New commands: `bqdash tables`, `schema`, `usage`, `run` and `guide`. `--json` on `check`,
   `dry-run`, `bench` and the new commands. Optional `bigquery.datasets` setting.
 

@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { QueryMeta, Row, Tile } from "../api";
-import { defaultFormat, fmt } from "../format";
+import { defaultFormat, fmt, labelOf } from "../format";
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
@@ -14,12 +14,31 @@ function cssVar(el: Element, name: string) {
   return getComputedStyle(el).getPropertyValue(name).trim();
 }
 
-function useColorScheme(cb: () => void) {
+function useThemeChange(cb: () => void) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", cb);
-    return () => mq.removeEventListener("change", cb);
+    window.addEventListener("bqdash:theme", cb);
+    return () => { mq.removeEventListener("change", cb); window.removeEventListener("bqdash:theme", cb); };
   }, [cb]);
+}
+
+// ECharts caches text widths per font. Measuring before Geist loads caches fallback widths
+// and clips axis labels, so charts wait for the font (or give up after 1.5 s).
+const fontsReady: Promise<unknown> = Promise.race([
+  Promise.all([
+    document.fonts?.load('400 11px "Geist Variable"'),
+    document.fonts?.load('400 12px "Geist Variable"'),
+  ]),
+  new Promise((r) => setTimeout(r, 1500)),
+]);
+
+const esc = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function withAlpha(hex: string, a: number) {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
 export function buildSeries(tile: Tile, rows: Row[]) {
@@ -65,42 +84,78 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
     const xFmt = defaultFormat(query.columns[tile.x!]);
     const yFmt = tile.format ?? query.formats[yCol] ?? defaultFormat(query.columns[yCol]);
     const colors = Array.from({ length: 8 }, (_, i) => cssVar(el, `--series-${i + 1}`));
-    const text2 = cssVar(el, "--text-secondary");
-    const muted = cssVar(el, "--text-muted");
+    const text1 = cssVar(el, "--text-1");
+    const text2 = cssVar(el, "--text-2");
+    const text3 = cssVar(el, "--text-3");
     const grid = cssVar(el, "--grid");
-    const surface = cssVar(el, "--surface-1");
+    const surface = cssVar(el, "--card");
+    const border = cssVar(el, "--border");
+    const font = cssVar(el, "--font-sans");
+    const names = series.map((s) => (tile.series ? s.name : labelOf(query, s.name)));
     const multi = series.length > 1;
     const isBar = tile.type === "bar";
+    const few = xs.length <= 2;
+
+    const tooltipHtml = (params: any) => {
+      const list = Array.isArray(params) ? params : [params];
+      if (!list.length) return "";
+      const head = `<div class="tt-head">${esc(fmt(xs[list[0].dataIndex], xFmt))}</div>`;
+      const rowsHtml = list.map((p: any) =>
+        `<div class="tt-row"><i class="tt-key ${isBar ? "bar" : "line"}" style="background:${p.color}"></i>` +
+        `<b>${esc(fmt(p.value, yFmt))}</b><span>${esc(names[p.seriesIndex] ?? "")}</span></div>`).join("");
+      return head + rowsHtml;
+    };
+
     chart.current.setOption({
       color: colors,
       animation: false,
-      textStyle: { fontFamily: "inherit", fontSize: 11, color: text2 },
-      grid: { left: 4, right: 12, top: multi ? 24 : 8, bottom: 2, containLabel: true },
-      legend: multi ? { top: 0, left: 0, itemWidth: 10, itemHeight: 10, icon: "roundRect", textStyle: { color: text2, fontSize: 11 } } : { show: false },
+      textStyle: { fontFamily: font, fontSize: 11, color: text2 },
+      grid: { left: 8, right: isBar || few ? 8 : 20, top: multi ? 32 : 8, bottom: 0, containLabel: true },
+      legend: multi
+        ? { top: 0, left: 0, itemWidth: isBar ? 10 : 14, itemHeight: isBar ? 10 : 2, itemGap: 16,
+            icon: isBar ? "roundRect" : "rect", itemStyle: { borderWidth: 0 }, textStyle: { color: text2, fontSize: 12, fontFamily: font },
+            formatter: (n: string) => names[series.findIndex((s) => s.name === n)] ?? n }
+        : { show: false },
       tooltip: {
         trigger: "axis",
-        axisPointer: { type: isBar ? "shadow" : "line", lineStyle: { color: muted } },
-        backgroundColor: surface, borderColor: grid, textStyle: { color: cssVar(el, "--text-primary"), fontSize: 12 },
-        valueFormatter: (v: unknown) => fmt(v, yFmt),
+        className: "chart-tooltip",
+        axisPointer: isBar
+          ? { type: "shadow", shadowStyle: { color: withAlpha(text1.startsWith("#") ? text1 : "#000000", 0.04) } }
+          : { type: "line", lineStyle: { color: text3, width: 1, type: "solid" } },
+        backgroundColor: surface, borderColor: border, borderWidth: 1, padding: [8, 10],
+        textStyle: { color: text1, fontSize: 12, fontFamily: font },
+        extraCssText: "border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.08);",
+        formatter: tooltipHtml,
       },
       xAxis: {
-        type: "category", data: xs, boundaryGap: isBar,
-        axisLine: { lineStyle: { color: grid } }, axisTick: { show: false },
-        axisLabel: { color: muted, hideOverlap: true, alignMinLabel: isBar ? undefined : "left", alignMaxLabel: isBar ? undefined : "right", formatter: (v: string) => fmt(v, xFmt, true) },
+        type: "category", data: xs, boundaryGap: isBar || few,
+        axisLine: { lineStyle: { color: border } }, axisTick: { show: false },
+        axisLabel: { color: text3, fontFamily: font, fontSize: 11, margin: 10, hideOverlap: true, formatter: (v: string) => fmt(v, xFmt, true) },
       },
       yAxis: {
         type: "value", splitNumber: 4,
-        splitLine: { lineStyle: { color: grid } },
-        axisLabel: { color: muted, formatter: (v: number) => fmt(v, yFmt, true) },
+        splitLine: { lineStyle: { color: grid, width: 1 } },
+        axisLabel: { color: text3, fontFamily: font, fontSize: 11, margin: 10, formatter: (v: number) => fmt(v, yFmt, true) },
       },
-      series: series.map((s) => isBar
-        ? { type: "bar", name: s.name, data: s.data, barMaxWidth: 28, barGap: "10%", itemStyle: { borderRadius: [4, 4, 0, 0] }, emphasis: { focus: "series" } }
-        : { type: "line", name: s.name, data: s.data, showSymbol: xs.length <= 2, symbolSize: 8, lineStyle: { width: 2 }, connectNulls: false, emphasis: { focus: "series" } }),
+      series: series.map((s, i) => isBar
+        ? { type: "bar", name: s.name, data: s.data, barMaxWidth: 24, barGap: "12%", barCategoryGap: "32%",
+            itemStyle: { borderRadius: [4, 4, 0, 0] }, emphasis: { itemStyle: { opacity: 0.85 } } }
+        : { type: "line", name: s.name, data: s.data, connectNulls: false,
+            showSymbol: few, symbol: "circle", symbolSize: 10,
+            itemStyle: { color: colors[i], borderColor: surface, borderWidth: 2 },
+            lineStyle: { width: 2, cap: "round", join: "round" },
+            emphasis: { scale: false, focus: multi ? "series" : "none" },
+            ...(multi ? {} : {
+              areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: withAlpha(colors[i], 0.12) }, { offset: 1, color: withAlpha(colors[i], 0) }]) },
+            }) }),
     }, true);
   };
 
-  useEffect(render, [tile, query, rows]);
-  useColorScheme(render);
+  const [fontOk, setFontOk] = useState(false);
+  useEffect(() => { let live = true; fontsReady.then(() => live && setFontOk(true)); return () => { live = false; }; }, []);
+  useEffect(() => { if (fontOk) render(); }, [fontOk, tile, query, rows]);
+  useThemeChange(() => { if (fontOk) render(); });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -109,6 +164,6 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
     return () => { ro.disconnect(); chart.current?.dispose(); chart.current = null; };
   }, []);
 
-  if (rows.length === 0) return <div className="tile-msg muted">No rows for this range</div>;
+  if (rows.length === 0) return <div className="tile-empty">No rows for this range</div>;
   return <div ref={ref} style={{ width: "100%", height }} role="img" aria-label={`${tile.type} chart of ${String(tile.y)} by ${tile.x}`} />;
 }
