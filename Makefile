@@ -1,7 +1,7 @@
 .PHONY: install web test check serve preview
 
 install:
-	uv sync
+	uv sync --all-extras
 	cd web && npm ci
 
 web:
