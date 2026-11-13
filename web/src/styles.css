@@ -219,10 +219,13 @@ td .badge, .card-head .badge { margin-left: 8px; }
 
 .tile { padding: 14px 16px 16px; transition: border-color 150ms; }
 .tile:hover { border-color: var(--border-strong); }
-.tile-kpi, .note { align-self: start; }
-.tile-head { display: flex; align-items: center; gap: 8px; min-height: 26px; margin-bottom: 8px; }
-.tile-head h2 { font-size: 13px; font-weight: 500; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.note { align-self: start; }
+/* KPI tiles in a row share a height and keep their values on one baseline, even when titles wrap. */
+.tile-kpi { display: flex; flex-direction: column; }
+.tile-kpi .tile-body { margin-top: auto; }
+.tile-head { display: flex; align-items: flex-start; gap: 8px; min-height: 26px; margin-bottom: 8px; }
+.tile-head h2 { flex: 1; min-width: 0; padding-top: 4px; font-size: 13px; line-height: 1.35; font-weight: 500; color: var(--text-2); overflow-wrap: anywhere; text-wrap: pretty; }
+.tile-meta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 26px; }
 .time { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .time.slow { color: var(--amber-fg); }
 .slow-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--amber-fg); margin-right: 6px; vertical-align: 1px; }
