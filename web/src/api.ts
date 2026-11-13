@@ -4,8 +4,9 @@ export type Meta = {
   project: string;
   display: {
     title: string | null; brand_color: string | null; has_logo: boolean;
-    currency: string; locale: string; slow_tile_ms: number; billing_mode: "on_demand" | "reservation";
+    currency: string; locale: string; slow_tile_ms: number; billing_mode: "on_demand" | "reservation" | "local";
     price_per_tib_usd: number; billing_project: string | null; location: string | null; row_cap: number;
+    warehouse: "bigquery" | "duckdb"; database: string | null;
   };
 };
 

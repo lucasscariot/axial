@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, type Dataset, type DashboardDef, type Meta, type Tile } from "./api";
-import { addDays, daysBetween, getDisplay, humanize, labelOf, ms, todayIso } from "./format";
+import { addDays, daysBetween, engineName, getDisplay, humanize, labelOf, ms, todayIso } from "./format";
 import { IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
 import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
@@ -158,7 +158,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
           <p className="print-only print-meta">
             Generated {new Date().toLocaleString(getDisplay().locale, { dateStyle: "medium", timeStyle: "short" })}
             {meta?.mode === "fixture" && <span className="dot-sep">Representative fixture data, not real figures</span>}
-            {meta?.mode === "live" && meta.display.billing_project && <span className="dot-sep">BigQuery · {meta.display.billing_project}</span>}
+            {meta?.mode === "live" && (meta.display.billing_project || meta.display.database) && <span className="dot-sep">{engineName()} · {meta.display.billing_project ?? meta.display.database}</span>}
           </p>
         </div>
       </header>
@@ -188,7 +188,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
           </>
         )}
         <span className="spacer" />
-        <label className="switch" title="Skip the app cache and BigQuery's result cache. Every dataset submits a new, billed job.">
+        <label className="switch" title={getDisplay().billing_mode === "local" ? "Skip the app cache. Every dataset runs a new query." : "Skip the app cache and BigQuery's result cache. Every dataset submits a new, billed job."}>
           <input type="checkbox" role="switch" checked={bypass} onChange={(e) => setBypass(e.target.checked)} />
           <span className="switch-track" aria-hidden><span className="switch-thumb" /></span>
           Bypass caches

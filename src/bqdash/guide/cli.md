@@ -15,6 +15,8 @@
 | `bqdash agents sync [--check]` | refresh AGENTS.md, CLAUDE.md and skills |
 
 **Billed:** these run BigQuery jobs. Check `dry-run` first.
+With `warehouse: duckdb` they run against the local file and cost nothing; `dry-run` then
+checks the query plan instead of estimating bytes.
 
 | command | |
 |---|---|

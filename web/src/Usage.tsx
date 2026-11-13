@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Meta } from "./api";
-import { addDays, bytes, getDisplay, ms, pct, todayIso, usd } from "./format";
+import { addDays, bytes, engineName, getDisplay, ms, pct, todayIso, usd } from "./format";
 import { InspectDrawer } from "./Inspect";
 import { Link, setSearch } from "./router";
 
@@ -51,9 +51,10 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
   useEffect(() => { document.title = "Query usage"; }, []);
   useEffect(() => { if (meta?.mode === "live") api.usage(range.start, range.end).then(setD, (e) => setErr(e.message)); }, [range, meta]);
   const onDemand = getDisplay().billing_mode === "on_demand";
+  const local = getDisplay().billing_mode === "local";
   return (
     <main className="page">
-      <RangeBar range={range} setRange={setRange} title="Usage" sub="Requests, BigQuery jobs and cost per saved query" />
+      <RangeBar range={range} setRange={setRange} title="Usage" sub={local ? `Requests and ${engineName()} queries per saved query` : "Requests, BigQuery jobs and cost per saved query"} />
       <FixtureNote meta={meta} />
       {err && <div className="banner error">{err}</div>}
       {d && (
@@ -67,7 +68,7 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
                   <th className="num" title="Jobs answered from BigQuery's result cache">BQ cache</th>
                   <th className="num" title="p95 time the app took to serve the dataset">p95 response</th>
                   <th className="num" title="p95 BigQuery execution time (start to end)">p95 BQ exec</th>
-                  {onDemand ? <><th className="num">Bytes billed</th><th className="num" title={`Gross estimate at $${d.price_per_tib_usd}/TiB`}>Est. cost</th></> : <th className="num">Slot-hours</th>}
+                  {local ? null : onDemand ? <><th className="num">Bytes billed</th><th className="num" title={`Gross estimate at $${d.price_per_tib_usd}/TiB`}>Est. cost</th></> : <th className="num">Slot-hours</th>}
                   <th className="num">Failed</th>
                 </tr>
               </thead>
@@ -81,7 +82,7 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
                     <td className="num">{pct(q.bq_cache_hit_rate)}</td>
                     <td className="num">{ms(q.p95_app_ms)}</td>
                     <td className="num">{ms(q.p95_bq_exec_ms)}</td>
-                    {onDemand ? <><td className="num">{bytes(q.bytes_billed)}</td><td className="num">{usd(q.est_cost_usd)}</td></> : <td className="num">{q.slot_hours.toFixed(3)}</td>}
+                    {local ? null : onDemand ? <><td className="num">{bytes(q.bytes_billed)}</td><td className="num">{usd(q.est_cost_usd)}</td></> : <td className="num">{q.slot_hours.toFixed(3)}</td>}
                     <td className={`num ${q.errors || q.jobs_failed ? "bad" : ""}`}>{q.errors + q.jobs_failed || ""}</td>
                   </tr>
                 ))}
@@ -91,7 +92,7 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
                 <tfoot>
                   <tr>
                     <td>Total</td><td className="num">{d.totals.requests}</td><td className="num">{d.totals.jobs}</td><td /><td className="num">{pct(d.totals.bq_cache_hit_rate)}</td><td /><td />
-                    {onDemand ? <><td className="num">{bytes(d.totals.bytes_billed)}</td><td className="num">{usd(d.totals.est_cost_usd)}</td></> : <td className="num">{d.totals.slot_hours.toFixed(3)}</td>}
+                    {local ? null : onDemand ? <><td className="num">{bytes(d.totals.bytes_billed)}</td><td className="num">{usd(d.totals.est_cost_usd)}</td></> : <td className="num">{d.totals.slot_hours.toFixed(3)}</td>}
                     <td />
                   </tr>
                 </tfoot>
@@ -114,6 +115,7 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
   useEffect(() => { document.title = `${queryId} · usage`; }, [queryId]);
   useEffect(() => { if (meta?.mode === "live") api.usageQuery(queryId, range.start, range.end).then(setD, (e) => setErr(e.message)); }, [range, meta, queryId]);
   const onDemand = getDisplay().billing_mode === "on_demand";
+  const local = getDisplay().billing_mode === "local";
   return (
     <main className="page">
       <RangeBar range={range} setRange={setRange}
@@ -148,7 +150,7 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
             </div>
           </section>
           <section className="card flush">
-            <header className="card-head"><h2>Runs</h2><p>{d.runs.length} requests · {d.totals.jobs} jobs{onDemand ? ` · ${bytes(d.totals.bytes_billed)} billed · ${usd(d.totals.est_cost_usd)}` : ` · ${d.totals.slot_hours.toFixed(3)} slot-h`}</p></header>
+            <header className="card-head"><h2>Runs</h2><p>{d.runs.length} requests · {d.totals.jobs} jobs{local ? "" : onDemand ? ` · ${bytes(d.totals.bytes_billed)} billed · ${usd(d.totals.est_cost_usd)}` : ` · ${d.totals.slot_hours.toFixed(3)} slot-h`}</p></header>
             <div className="table-wrap">
               <table className="dense">
                 <thead><tr><th>When</th><th>Dashboard</th><th>Filters</th><th>Served by</th><th>Outcome</th><th className="num">App time</th><th className="num">Queue</th><th className="num">Exec</th><th className="num">Billed</th><th className="num">Slot-ms</th><th>BQ cache</th><th>SQL</th><th>Job</th></tr></thead>

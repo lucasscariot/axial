@@ -104,10 +104,19 @@ def _require_bigquery(cfg: Config) -> None:
 
 
 def _warehouse(cfg: Config):
-    from .bq import BigQueryWarehouse
+    from .warehouses import make_warehouse
 
-    _require_bigquery(cfg)
-    return BigQueryWarehouse(cfg.billing_project, cfg.location)
+    if cfg.warehouse == "bigquery":
+        _require_bigquery(cfg)
+    try:
+        return make_warehouse(cfg)
+    except ConfigError as e:
+        raise click.ClickException(str(e)) from None
+
+
+def _target(cfg: Config) -> str | None:
+    """What live queries run against, for banners: the billing project or the DuckDB file."""
+    return f"duckdb {cfg.duckdb_path.name}" if cfg.local and cfg.duckdb_path else cfg.billing_project
 
 
 def _free_port(preferred: int) -> int:
@@ -156,11 +165,25 @@ def _engine_range(v: str) -> str:
     return f">={major}.{minor},<{major}.{minor + 1}" if major == 0 else f">={major}.{minor},<{major + 1}"
 
 
+def _duckdb_config(text: str, path: str) -> str:
+    """Swap the template's bigquery and billing sections for a duckdb section."""
+    start, end = text.index("bigquery:\n"), text.index("execution:\n")
+    block = (
+        "warehouse: duckdb             # bigquery | duckdb\n\n"
+        "duckdb:\n"
+        f"  path: {path}               # database file, relative to this project\n"
+        "  datasets: []                # schemas agents should explore first, e.g. [mydb.main]\n"
+        "  allow_external_access: false  # true lets queries read files and URLs (read_parquet etc.)\n\n"
+    )
+    return text[:start] + block + text[end:]
+
+
 @main.command()
 @click.argument("directory", type=click.Path(file_okay=False, path_type=Path))
 @click.option("--billing-project", help="GCP project that runs and pays for queries")
 @click.option("--location", help="BigQuery job location, e.g. EU, US, europe-west2")
-def init(directory: Path, billing_project, location):
+@click.option("--duckdb", "duckdb_path", help="query a local DuckDB file instead of BigQuery (path relative to DIRECTORY)")
+def init(directory: Path, billing_project, location, duckdb_path):
     """Create a dashboard project in DIRECTORY."""
     directory = directory.resolve()
     files = [p for p in TEMPLATE_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
@@ -175,6 +198,8 @@ def init(directory: Path, billing_project, location):
             text = text.replace("__ENGINE_RANGE__", _engine_range(engine_version()))
             text = text.replace("__BILLING_PROJECT__", billing_project or "null  # set me")
             text = text.replace("__LOCATION__", location or "US")
+            if duckdb_path:
+                text = _duckdb_config(text, duckdb_path)
             dst.write_text(text)
         else:
             shutil.copyfile(src, dst)
@@ -189,6 +214,9 @@ def init(directory: Path, billing_project, location):
     click.echo("Next:")
     click.echo(f"  cd {directory}")
     click.echo("  bqdash up --fixture        # see the example dashboard with sample data")
+    if duckdb_path:
+        click.echo(f"  bqdash up                  # run against {duckdb_path}")
+        return
     if not billing_project:
         click.echo(f"  # set bigquery.billing_project and location in {CONFIG_FILE}")
     click.echo("  gcloud auth application-default login")
@@ -214,7 +242,7 @@ def up(fixture, port, no_open):
 
     if (cfg.root / "AGENTS.md").exists() and agents.stale(cfg.root):
         click.secho("agent files differ from this engine version; run `bqdash agents sync`", fg="yellow", err=True)
-    click.echo(f"bqdash {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else cfg.billing_project}")
+    click.echo(f"bqdash {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else _target(cfg)}")
     click.echo(url)
     if not no_open:
         def open_when_ready():
@@ -315,7 +343,22 @@ def dry_run(query_id, start, end, params, as_json):
     problems = check_read_only_select(q.sql)
     if problems:
         raise click.ClickException("; ".join(problems))
-    r = _warehouse(cfg).dry_run(q.sql, bq_params(q, values))
+    wh = _warehouse(cfg)
+    try:
+        r = wh.dry_run(q.sql, bq_params(q, values))
+    except ValueError as e:
+        raise click.ClickException(f"{q.id}: {e}") from None
+    if cfg.local:
+        if as_json:
+            _json({"query": q.id, "sql_hash": q.sql_hash, "params": {k: str(v) for k, v in values.items()},
+                   "warehouse": cfg.warehouse, "statement_type": r.statement_type, "plan_ok": True,
+                   "referenced_tables": r.referenced_tables})
+            return
+        click.echo(f"query:          {q.id}  sql {q.sql_hash[:12]}")
+        click.echo(f"params:         {json.dumps({k: str(v) for k, v in values.items()})}")
+        click.echo(f"plan:           ok ({cfg.warehouse}, nothing billed)")
+        click.echo(f"tables:         {', '.join(r.referenced_tables) or '-'}")
+        return
     over_cap = bool(cfg.maximum_bytes_billed and r.bytes_processed > cfg.maximum_bytes_billed)
     not_select = bool(r.statement_type and r.statement_type != "SELECT")
     if as_json:
@@ -371,8 +414,9 @@ def bench(query_id, start, end, params, runs, as_json):
             jobs.append({k: j[k] for k in ("job_id", "exec_ms", "queue_ms", "bytes_billed", "slot_ms", "cache_hit")})
             if as_json:
                 continue
+            cost = "" if cfg.local else f"billed {_fmt_bytes(j['bytes_billed'])}  slot {j['slot_ms']} ms  "
             click.echo(f"run {i + 1}: job {j['job_id']}  exec {j['exec_ms']} ms  queue {j['queue_ms']} ms  "
-                       f"billed {_fmt_bytes(j['bytes_billed'])}  slot {j['slot_ms']} ms  rows {len(s.result.rows)}")
+                       f"{cost}rows {len(s.result.rows)}")
 
     asyncio.run(go())
     out = query_runs(store, cfg, q.id, 0, time.time() + 1)
@@ -417,8 +461,8 @@ def run(query_id, start, end, params, as_json):
     click.echo("\t".join(cols))
     for row in r.rows:
         click.echo("\t".join("" if row.get(c) is None else str(row.get(c)) for c in cols))
-    click.echo(f"-- {len(r.rows)} of {r.total_rows} rows · job {r.job_id} · billed "
-               f"{_fmt_bytes(job and job['bytes_billed'])}", err=True)
+    cost = f"exec {job and job['exec_ms']} ms" if cfg.local else f"billed {_fmt_bytes(job and job['bytes_billed'])}"
+    click.echo(f"-- {len(r.rows)} of {r.total_rows} rows · job {r.job_id} · {cost}", err=True)
 
 
 @main.command()
