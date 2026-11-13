@@ -118,6 +118,20 @@ def test_database_is_read_only_and_sealed(db, tmp_path):
     con.close()
 
 
+def test_concurrent_jobs_share_the_database_instance(db):
+    """Dashboards run several tiles at once; every connection after the first must still work."""
+    wh = DuckDBWarehouse(db)
+    held = wh.connect()  # keeps the shared instance (and its locked configuration) alive
+    try:
+        for i in range(8):
+            wh.submit(job_id=f"c{i}", sql="SELECT count(*) AS n FROM bookings WHERE amount >= @m",
+                      params=[("m", "INT64", i)], labels={}, use_query_cache=True, maximum_bytes_billed=None)
+        results = [wh.wait_and_fetch(f"c{i}", 10, 10)[1][0]["n"] for i in range(8)]
+    finally:
+        held.close()
+    assert results == [100 - i for i in range(8)]
+
+
 def test_dry_run_plans_and_lists_tables(db):
     wh = DuckDBWarehouse(db)
     params = [("start_date", "DATE", dt.date(2026, 11, 1)), ("end_date", "DATE", dt.date(2026, 11, 2))]
