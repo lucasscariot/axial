@@ -4,6 +4,19 @@ Projects pin a compatible range in `bqdash.yaml` (`engine: ">=0.1,<0.2"`). While
 is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists them under
 **Upgrade notes**.
 
+## [0.1.2](https://github.com/lucasscariot/bqdash/compare/v0.1.1...v0.1.2) (2026-11-13)
+
+
+### Features
+
+* query local duckdb files as a warehouse ([#10](https://github.com/lucasscariot/bqdash/issues/10)) ([5b07a67](https://github.com/lucasscariot/bqdash/commit/5b07a67ce00324188f9f6761462b57d9c70b9519))
+
+
+### Bug Fixes
+
+* **duckdb:** reuse the shared instance's configuration lock ([#12](https://github.com/lucasscariot/bqdash/issues/12)) ([5ddbcc4](https://github.com/lucasscariot/bqdash/commit/5ddbcc42a4c37ccb308750bfbcc9195b5432cc3b))
+* **ui:** wrap tile titles instead of cropping them ([#13](https://github.com/lucasscariot/bqdash/issues/13)) ([1c5b128](https://github.com/lucasscariot/bqdash/commit/1c5b128562eedc26bf897f51ca673c7dfd8eb23a))
+
 ## [0.1.1](https://github.com/lucasscariot/bqdash/compare/v0.1.0...v0.1.1) (2026-11-12)
 
 
