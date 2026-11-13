@@ -83,10 +83,15 @@ class DuckDBWarehouse:
         self.location = str(self.path)
         self._jobs: dict[str, _Job] = {}
         self._lock = threading.Lock()
+        self._connect_lock = threading.Lock()
 
     def connect(self):
-        con = self._duckdb.connect(str(self.path), read_only=True, config=dict(self.config))
-        con.execute("SET lock_configuration = true")
+        # DuckDB shares one database instance between connections to the same file in a process,
+        # so the configuration lock set by the first connection already applies to later ones.
+        with self._connect_lock:
+            con = self._duckdb.connect(str(self.path), read_only=True, config=dict(self.config))
+            if not con.execute("SELECT current_setting('lock_configuration')").fetchone()[0]:
+                con.execute("SET lock_configuration = true")
         return con
 
     @staticmethod
