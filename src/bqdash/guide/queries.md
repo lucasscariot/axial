@@ -43,6 +43,14 @@ ORDER BY day
   skip partitions, and select only the columns you need. Compare `bqdash dry-run` bytes
   for a 1-day and a 7-day range: if they're the same, the filter isn't pruning partitions.
 
+## DuckDB projects
+
+With `warehouse: duckdb`, write DuckDB SQL but keep `@params`: bqdash rewrites them to
+DuckDB's `$params`. Declare `columns` with the BigQuery type names: `INT64` for
+INTEGER/BIGINT/HUGEINT, `FLOAT64` for DOUBLE, `NUMERIC` for DECIMAL, `STRING` for VARCHAR,
+`BOOL` for BOOLEAN, and `DATE`/`TIMESTAMP` as is. `bqdash dry-run` plans the query (catching
+syntax, binding and type errors) and lists the tables it reads; `run` and `bench` cost nothing.
+
 ## Formats
 
 | format | value | renders |

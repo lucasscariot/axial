@@ -85,6 +85,9 @@ export function App() {
           </div>
           <span className="spacer" />
           {meta?.mode === "fixture" && <span className="badge amber" title="Representative data; no warehouse queries">Fixture data</span>}
+          {meta?.display.warehouse === "duckdb" && meta.display.database && (
+            <span className="nav-meta" title="Local DuckDB database">DuckDB<span className="sep">/</span>{meta.display.database}</span>
+          )}
           {meta?.display.billing_project && (
             <span className="nav-meta" title="Billing project · location">{meta.display.billing_project}<span className="sep">/</span>{meta.display.location}</span>
           )}

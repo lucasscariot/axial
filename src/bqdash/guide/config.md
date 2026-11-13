@@ -16,5 +16,24 @@ server: {port: 8765}
 storage: {backend: sqlite, path: .bqdash/history.sqlite3}
 ```
 
+## Local DuckDB
+
+Point a project at a DuckDB file instead of BigQuery. The `bigquery` and `billing`
+sections are then ignored: nothing is billed, so there are no bytes, slots or costs.
+
+```yaml
+warehouse: duckdb              # bigquery (default) | duckdb
+duckdb:
+  path: ../warehouse/analytics.duckdb   # relative to the project root
+  datasets: [analytics.main]   # schemas `bqdash tables` lists by default
+  allow_external_access: false # true lets SQL read files and URLs (read_parquet, httpfs)
+  threads: null                # optional DuckDB settings
+  memory_limit: null           # e.g. "4GB"
+```
+
+The file is opened read-only, once per query, so a rebuilt database (written elsewhere and
+moved into place) is picked up by the next query. External access is off by default and
+cannot be switched back on from SQL.
+
 Override any value with `BQDASH_<SECTION>_<KEY>`, for example
 `BQDASH_BIGQUERY_BILLING_PROJECT=other`. Values are parsed as YAML scalars.

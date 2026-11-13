@@ -50,9 +50,9 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
     if mode == "live":
         store = store or open_store(cfg)
         if warehouse is None:
-            from .bq import BigQueryWarehouse
+            from .warehouses import make_warehouse
 
-            warehouse = BigQueryWarehouse(cfg.billing_project, cfg.location)
+            warehouse = make_warehouse(cfg)
         state["executor"] = Executor(cfg, store, warehouse, app_revision=git_revision(cfg.root))
 
     @contextlib.asynccontextmanager

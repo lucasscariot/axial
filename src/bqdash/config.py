@@ -15,7 +15,8 @@ from packaging.version import Version
 
 CONFIG_FILE = "bqdash.yaml"
 SCHEMA_VERSION = 1
-SECTIONS = ("bigquery", "billing", "execution", "display", "server", "storage")
+SECTIONS = ("bigquery", "duckdb", "billing", "execution", "display", "server", "storage")
+WAREHOUSES = ("bigquery", "duckdb")
 ENV_PREFIX = "BQDASH_"
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -35,6 +36,11 @@ class ConfigError(Exception):
 class Config:
     root: Path
     engine: str | None = None
+    warehouse: str = "bigquery"
+    duckdb_path: Path | None = None
+    duckdb_allow_external_access: bool = False
+    duckdb_threads: int | None = None
+    duckdb_memory_limit: str | None = None
     billing_project: str | None = None
     location: str | None = None
     datasets: list[str] = field(default_factory=list)
@@ -68,8 +74,15 @@ class Config:
     def fixtures_dir(self) -> Path:
         return self.root / "fixtures"
 
+    @property
+    def local(self) -> bool:
+        """True when queries run on this machine, so nothing is billed."""
+        return self.warehouse == "duckdb"
+
     def display(self) -> dict:
         return {
+            "warehouse": self.warehouse,
+            "database": self.duckdb_path.name if self.duckdb_path else None,
             "title": self.title,
             "currency": self.currency,
             "locale": self.locale,
@@ -164,6 +177,7 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         check_engine(raw.get("engine"))
 
     bq, billing, ex = _section(raw, "bigquery"), _section(raw, "billing"), _section(raw, "execution")
+    duck = _section(raw, "duckdb")
     disp, server, storage = _section(raw, "display"), _section(raw, "server"), _section(raw, "storage")
 
     def num(section: dict, key: str, default: Any, cast):
@@ -175,9 +189,26 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         except (TypeError, ValueError):
             raise ConfigError(f"{CONFIG_FILE}: {key} must be a number, got {v!r}") from None
 
+    warehouse = raw.get("warehouse") or "bigquery"
+    if warehouse not in WAREHOUSES:
+        raise ConfigError(f"{CONFIG_FILE}: warehouse must be one of {', '.join(WAREHOUSES)}, got {warehouse!r}")
+    duckdb_path = None
+    if warehouse == "duckdb":
+        if not duck.get("path"):
+            raise ConfigError(f"{CONFIG_FILE}: warehouse is duckdb, so set duckdb.path to the database file "
+                              "(relative to the project root), or BQDASH_DUCKDB_PATH")
+        duckdb_path = Path(str(duck["path"])).expanduser()
+        if not duckdb_path.is_absolute():
+            duckdb_path = (root / duckdb_path).resolve()
+
     cfg = Config(
         root=root,
         engine=raw.get("engine"),
+        warehouse=warehouse,
+        duckdb_path=duckdb_path,
+        duckdb_allow_external_access=bool(duck.get("allow_external_access", False)),
+        duckdb_threads=num(duck, "threads", None, int),
+        duckdb_memory_limit=duck.get("memory_limit"),
         billing_project=bq.get("billing_project"),
         location=bq.get("location"),
         datasets=_datasets(bq.get("datasets")),
@@ -199,7 +230,11 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         storage_backend=storage.get("backend", "sqlite"),
         history_path=root / storage.get("path", ".bqdash/history.sqlite3"),
     )
-    if cfg.billing_mode not in ("on_demand", "reservation"):
+    if cfg.local:
+        # A local database bills nothing: there are no bytes billed, slots or job costs to show.
+        cfg.billing_mode, cfg.billing_project, cfg.location, cfg.maximum_bytes_billed = "local", None, None, None
+        cfg.datasets = _datasets(duck.get("datasets"))
+    elif cfg.billing_mode not in ("on_demand", "reservation"):
         raise ConfigError(f"billing.mode must be on_demand or reservation, got {cfg.billing_mode!r}")
     if cfg.brand_color is not None and not HEX_COLOR.match(str(cfg.brand_color)):
         raise ConfigError(f"display.brand_color must be a #rrggbb color, got {cfg.brand_color!r}")

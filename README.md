@@ -239,12 +239,20 @@ BQDASH_BIGQUERY_BILLING_PROJECT=other-project BQDASH_SERVER_PORT=9000 bqdash up
 
 | Section | Keys |
 | --- | --- |
+| `warehouse` | `bigquery` (default) or `duckdb` |
 | `bigquery` | `billing_project`, `location`, `datasets`, `maximum_bytes_billed`, `wait_timeout_seconds` |
+| `duckdb` | `path`, `datasets`, `allow_external_access`, `threads`, `memory_limit` |
 | `billing` | `mode` (`on_demand` \| `reservation`), `price_per_tib_usd` |
 | `execution` | `default_cache_ttl_seconds`, `max_concurrent_jobs`, `row_cap` |
 | `display` | `title`, `locale`, `currency`, `brand_color`, `logo`, `slow_tile_ms` |
 | `server` | `port` (the next free port is used if it's taken) |
 | `storage` | `backend` (`sqlite`), `path` |
+
+To chart a local DuckDB file instead of BigQuery, create the project with
+`bqdash init my-dash --duckdb ../data/analytics.duckdb` (or set `warehouse: duckdb` and
+`duckdb.path`). Queries keep `@params`, the file is opened read-only, and the cost columns
+disappear because nothing is billed. Install with the extra: `uv tool install
+'bqdash[duckdb] @ git+ssh://git@github.com/lucasscariot/bqdash.git'`.
 
 `engine: ">=0.1,<0.2"` pins the bqdash versions a project works with. `bqdash guide config`
 documents every key.

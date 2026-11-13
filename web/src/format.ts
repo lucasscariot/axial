@@ -4,10 +4,12 @@ export const NUMERIC = new Set(["INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC"]);
 
 let display: Meta["display"] = {
   title: null, brand_color: null, has_logo: false, currency: "GBP", locale: "en-GB", slow_tile_ms: 3000, billing_mode: "on_demand",
-  price_per_tib_usd: 6.25, billing_project: null, location: null, row_cap: 2000,
+  price_per_tib_usd: 6.25, billing_project: null, location: null, row_cap: 2000, warehouse: "bigquery", database: null,
 };
 export function setDisplay(d: Meta["display"]) { display = d; }
 export function getDisplay() { return display; }
+/** The query engine, as shown in the UI. */
+export function engineName() { return display.warehouse === "duckdb" ? "DuckDB" : "BigQuery"; }
 
 /** "bookings_due" -> "Bookings due" */
 export function humanize(col: string): string {
