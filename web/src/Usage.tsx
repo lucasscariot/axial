@@ -41,7 +41,7 @@ function RangeBar({ range, setRange, title, sub }: { range: { start: string; end
 }
 
 function FixtureNote({ meta }: { meta: Meta | null }) {
-  return meta?.mode === "fixture" ? <div className="banner warn">Fixture mode records no execution history. Run <code>bqdash up</code> for live usage.</div> : null;
+  return meta?.mode === "fixture" ? <div className="banner warn">Fixture mode records no execution history. Run <code>axial up</code> for live usage.</div> : null;
 }
 
 export function UsagePage({ meta }: { meta: Meta | null }) {
@@ -126,7 +126,7 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
       {d && (
         <>
           <section className="card flush">
-            <header className="card-head"><h2>SQL versions</h2><p>Compare like with like: same filters, BigQuery cache bypassed (<code>bqdash bench</code> or “Bypass caches”).</p></header>
+            <header className="card-head"><h2>SQL versions</h2><p>Compare like with like: same filters, BigQuery cache bypassed (<code>axial bench</code> or “Bypass caches”).</p></header>
             <div className="table-wrap">
               <table className="dense">
                 <thead><tr><th>SQL</th><th>Filters</th><th>BQ cache</th><th className="num">Runs</th><th className="num">Median exec</th><th className="num">Median billed</th><th className="num">Median slot-ms</th><th>Last run</th><th>Repo</th></tr></thead>

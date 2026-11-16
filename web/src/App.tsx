@@ -91,7 +91,7 @@ export function App() {
           {meta?.display.billing_project && (
             <span className="nav-meta" title="Billing project · location">{meta.display.billing_project}<span className="sep">/</span>{meta.display.location}</span>
           )}
-          {meta && <span className="nav-meta" title="bqdash engine version">v{meta.engine_version}</span>}
+          {meta && <span className="nav-meta" title="axial engine version">v{meta.engine_version}</span>}
           <ThemeToggle />
         </div>
       </nav>

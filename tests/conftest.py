@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from bqdash.bq import JobFailed, JobState, SubmissionUncertain
-from bqdash.config import load_config
+from axial.bq import JobFailed, JobState, SubmissionUncertain
+from axial.config import load_config
 
 PROJECT = Path(__file__).resolve().parent / "project"
 
@@ -85,7 +85,7 @@ class FakeWarehouse:
                             {"name": "region", "type": "STRING", "mode": "NULLABLE", "description": "Region"}]}
 
     def dry_run(self, sql, params):
-        from bqdash.bq import DryRun
+        from axial.bq import DryRun
 
         return DryRun(self.bytes_billed, "SELECT", ["test-project.analytics.fct_bookings"])
 

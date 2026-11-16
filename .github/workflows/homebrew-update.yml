@@ -1,0 +1,65 @@
+name: update homebrew
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag (vX.Y.Z)
+        required: true
+        type: string
+
+concurrency:
+  group: homebrew-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Update the formula and open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python scripts/update_homebrew.py "$RELEASE_TAG"
+          if git diff --quiet -- Formula/axial.rb; then
+            exit 0
+          fi
+          branch="chore/homebrew-$RELEASE_TAG"
+          # Re-running a completed dispatch must not overwrite an existing PR branch.
+          remote_head=$(git ls-remote --heads origin "$branch")
+          if [ -n "$remote_head" ]; then
+            echo "Homebrew update branch already exists: $branch"
+          else
+            git switch -c "$branch"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add Formula/axial.rb
+            git commit -m "chore(homebrew): update axial to $RELEASE_TAG"
+            git push --set-upstream origin "$branch"
+          fi
+          pr=$(gh pr list --head "$branch" --state all --json number,state --jq '.[0] // empty')
+          if [ -z "$pr" ]; then
+            printf 'Install the published %s release through Homebrew. Dependencies come from the release uv.lock and the archive has a SHA-256 checksum.\n' "$RELEASE_TAG" > /tmp/homebrew-pr-body
+            gh pr create --base main --head "$branch" \
+              --title "chore(homebrew): update axial to $RELEASE_TAG" \
+              --body-file /tmp/homebrew-pr-body
+          elif [ "$(jq -r .state <<< "$pr")" != OPEN ]; then
+            echo "The existing Homebrew update PR is already closed or merged."
+            exit 0
+          fi
+          # GITHUB_TOKEN-created pull requests need explicit CI dispatches.
+          gh workflow run homebrew.yml --ref "$branch"
+          gh workflow run ci.yml --ref "$branch"

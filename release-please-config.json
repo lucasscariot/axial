@@ -12,7 +12,7 @@
         {
           "type": "toml",
           "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name=='bqdash' || @.name.value=='bqdash')].version"
+          "jsonpath": "$.package[?(@.name=='axial' || @.name.value=='axial')].version"
         }
       ]
     }

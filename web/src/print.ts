@@ -15,13 +15,13 @@ export function enterPrintMode(title: string): () => void {
   root.setAttribute("data-printing", "true");
   root.setAttribute("data-theme", "light"); // not persisted: the viewer's preference stays
   document.title = title; // Chrome and Safari use it as the default PDF file name
-  window.dispatchEvent(new Event("bqdash:theme"));
+  window.dispatchEvent(new Event("axial:theme"));
   return () => {
     root.removeAttribute("data-printing");
     if (prevTheme === null) root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", prevTheme);
     document.title = prevTitle;
-    window.dispatchEvent(new Event("bqdash:theme"));
+    window.dispatchEvent(new Event("axial:theme"));
   };
 }
 

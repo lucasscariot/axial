@@ -18,8 +18,8 @@ export function useThemeChange(cb: () => void) {
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", cb);
-    window.addEventListener("bqdash:theme", cb);
-    return () => { mq.removeEventListener("change", cb); window.removeEventListener("bqdash:theme", cb); };
+    window.addEventListener("axial:theme", cb);
+    return () => { mq.removeEventListener("change", cb); window.removeEventListener("axial:theme", cb); };
   }, [cb]);
 }
 

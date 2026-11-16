@@ -4,10 +4,10 @@ import datetime as dt
 import pytest
 from fastapi.testclient import TestClient
 
-from bqdash.app import create_app
-from bqdash.executor import Executor, QueryError, QueryTimeout
-from bqdash.registry import Registry
-from bqdash.store import SQLiteStore as Store
+from axial.app import create_app
+from axial.executor import Executor, QueryError, QueryTimeout
+from axial.registry import Registry
+from axial.store import SQLiteStore as Store
 
 from .conftest import FakeWarehouse
 
@@ -176,7 +176,7 @@ def test_concurrency_is_bounded(cfg):
 
 
 def test_uncertain_submission_looks_up_same_job_before_retrying(cfg, monkeypatch):
-    monkeypatch.setattr("bqdash.executor.time.sleep", lambda s: None)
+    monkeypatch.setattr("axial.executor.time.sleep", lambda s: None)
     wh = FakeWarehouse()
     wh.fail_submit_uncertain = 1
     wh.uncertain_but_created = True

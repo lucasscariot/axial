@@ -6,13 +6,13 @@ import yaml
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
-from bqdash.app import create_app
-from bqdash.cli import main
-from bqdash.config import ConfigError, load_config
-from bqdash.duck import DuckDBWarehouse, to_duckdb_sql
-from bqdash.executor import Executor, QueryError
-from bqdash.registry import Registry
-from bqdash.store import SQLiteStore as Store
+from axial.app import create_app
+from axial.cli import main
+from axial.config import ConfigError, load_config
+from axial.duck import DuckDBWarehouse, to_duckdb_sql
+from axial.executor import Executor, QueryError
+from axial.registry import Registry
+from axial.store import SQLiteStore as Store
 
 duckdb = pytest.importorskip("duckdb")
 
@@ -39,11 +39,11 @@ def db(tmp_path):
 @pytest.fixture
 def duck_repo(repo, db):
     """The test project switched to a local DuckDB file, with the bookings query rewritten for it."""
-    raw = yaml.safe_load((repo / "bqdash.yaml").read_text())
+    raw = yaml.safe_load((repo / "axial.yaml").read_text())
     raw.pop("bigquery", None)
     raw["warehouse"] = "duckdb"
     raw["duckdb"] = {"path": "data/ops.duckdb", "datasets": ["ops.main"]}
-    (repo / "bqdash.yaml").write_text(yaml.safe_dump(raw))
+    (repo / "axial.yaml").write_text(yaml.safe_dump(raw))
     (repo / "queries" / "bookings_daily.sql").write_text(BOOKINGS_SQL)
     return repo
 
@@ -63,14 +63,14 @@ def test_config_resolves_path_and_turns_billing_off(duck_repo, db):
 
 
 def test_config_errors(duck_repo):
-    raw = yaml.safe_load((duck_repo / "bqdash.yaml").read_text())
+    raw = yaml.safe_load((duck_repo / "axial.yaml").read_text())
     raw["duckdb"] = {}
-    (duck_repo / "bqdash.yaml").write_text(yaml.safe_dump(raw))
+    (duck_repo / "axial.yaml").write_text(yaml.safe_dump(raw))
     with pytest.raises(ConfigError, match="duckdb.path"):
         load_config(duck_repo, environ={})
-    assert load_config(duck_repo, environ={"BQDASH_DUCKDB_PATH": "data/ops.duckdb"}).duckdb_path.name == "ops.duckdb"
+    assert load_config(duck_repo, environ={"AXIAL_DUCKDB_PATH": "data/ops.duckdb"}).duckdb_path.name == "ops.duckdb"
     raw["warehouse"] = "postgres"
-    (duck_repo / "bqdash.yaml").write_text(yaml.safe_dump(raw))
+    (duck_repo / "axial.yaml").write_text(yaml.safe_dump(raw))
     with pytest.raises(ConfigError, match="warehouse must be one of"):
         load_config(duck_repo, environ={})
 
@@ -184,7 +184,7 @@ def test_init_duckdb_project(tmp_path, db, monkeypatch):
     target = tmp_path / "dash"
     r = CliRunner().invoke(main, ["init", str(target), "--duckdb", "../data/ops.duckdb"])
     assert r.exit_code == 0, r.output
-    raw = yaml.safe_load((target / "bqdash.yaml").read_text())
+    raw = yaml.safe_load((target / "axial.yaml").read_text())
     assert raw["warehouse"] == "duckdb" and raw["duckdb"]["path"] == "../data/ops.duckdb"
     assert "bigquery" not in raw and "billing" not in raw
     cfg = load_config(target, environ={})

@@ -76,7 +76,7 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
                   </>}
                   {billing === "on_demand" && <Row k="Est. cost">{usd(job.est_cost_usd)} <span className="muted">gross, on-demand</span></Row>}
                   <Row k="SQL version"><span className="mono">{job.sql_hash.slice(0, 12)}</span>{job.app_revision && <span className="muted"> · project commit {job.app_revision}</span>}</Row>
-                  <Row k="Engine">{job.engine_version ? `bqdash ${job.engine_version}` : "–"}</Row>
+                  <Row k="Engine">{job.engine_version ? `axial ${job.engine_version}` : "–"}</Row>
                 </dl>
               </>
             ) : <p className="muted">No {engineName()} job is linked to this request.</p>}

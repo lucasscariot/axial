@@ -4,7 +4,7 @@ install:
 	uv sync --all-extras
 	cd web && npm ci
 
-# The built UI is committed (src/bqdash/web_dist) so git installs need no Node.
+# The built UI is committed (src/axial/web_dist) so git installs need no Node.
 web:
 	cd web && npm run build
 
@@ -14,4 +14,4 @@ test:
 
 # Render the test project with fixture data
 preview: web
-	cd tests/project && uv run bqdash preview booking_ops --fixture
+	cd tests/project && uv run axial preview booking_ops --fixture

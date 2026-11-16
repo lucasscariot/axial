@@ -1,0 +1,35 @@
+# axial project configuration. Any value can be overridden with an environment variable
+# named AXIAL_<SECTION>_<KEY>, e.g. AXIAL_BIGQUERY_BILLING_PROJECT=my-project.
+version: 2                     # config format version
+engine: "__ENGINE_RANGE__"     # axial versions this project works with
+
+bigquery:
+  billing_project: __BILLING_PROJECT__
+  location: __LOCATION__
+  datasets: []                        # datasets agents should explore first, e.g. [my-project.analytics]
+  maximum_bytes_billed: 10737418240   # 10 GiB per job; jobs above this fail instead of billing
+  wait_timeout_seconds: 90            # how long a dashboard waits before reporting a timeout
+
+billing:
+  mode: on_demand              # on_demand (cost from bytes billed) | reservation (slot-hours)
+  price_per_tib_usd: 6.25
+
+execution:
+  default_cache_ttl_seconds: 120
+  max_concurrent_jobs: 4
+  row_cap: 2000
+
+display:
+  title: null                  # shown in the top bar; defaults to the folder name
+  locale: en-US
+  currency: USD
+  brand_color: null            # e.g. "#2a78d6"; used for links and highlights
+  logo: null                   # path inside the project, e.g. assets/logo.svg
+  slow_tile_ms: 3000
+
+server:
+  port: 8765                   # axial up uses the next free port if this one is taken
+
+storage:
+  backend: sqlite
+  path: .axial/history.sqlite3

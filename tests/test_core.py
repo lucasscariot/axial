@@ -2,9 +2,9 @@ import datetime as dt
 
 import pytest
 
-from bqdash.checks import run_checks
-from bqdash.registry import DateRange, ParamError, Registry, normalize_params, resolve_params
-from bqdash.sqlcheck import check_read_only_select, referenced_params
+from axial.checks import run_checks
+from axial.registry import DateRange, ParamError, Registry, normalize_params, resolve_params
+from axial.sqlcheck import check_read_only_select, referenced_params
 
 
 @pytest.mark.parametrize("sql", [
