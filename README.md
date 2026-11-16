@@ -346,6 +346,10 @@ in `uv.lock`, `CHANGELOG.md` and `.release-please-manifest.json` together.
    tests on macOS and Linux, then merge it to make the release available to `brew upgrade`.
    No additional token or tap repository is needed.
 
+The initial Axial 0.1.2 source snapshot is retained under the `axial-bootstrap-0.1.2`
+tag, so the first formula remains downloadable after the rename branch is deleted.
+Subsequent version tags are managed by release-please.
+
 To retry a Homebrew update, run the **update homebrew** workflow on `main` with the published
 tag. To update the formula locally, run `uv run python scripts/update_homebrew.py vX.Y.Z` and open
 a PR. The formula uses `uv sync --frozen` at build time to install the release's locked
