@@ -1,0 +1,39 @@
+name: homebrew
+
+on:
+  pull_request:
+    paths:
+      - Formula/**
+      - scripts/update_homebrew.py
+      - .github/workflows/homebrew*.yml
+  push:
+    branches: [main]
+    paths:
+      - Formula/**
+      - scripts/update_homebrew.py
+      - .github/workflows/homebrew*.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d
+      - name: Register this checkout as the tap
+        run: |
+          tap="$(brew --repository)/Library/Taps/lucasscariot/homebrew-axial"
+          mkdir -p "$(dirname "$tap")"
+          ln -s "$GITHUB_WORKSPACE" "$tap"
+          brew trust --formula lucasscariot/axial/axial
+      - run: brew style lucasscariot/axial/axial
+      - run: brew install --build-from-source lucasscariot/axial/axial
+      - run: brew audit lucasscariot/axial/axial
+      - run: brew test lucasscariot/axial/axial

@@ -4,8 +4,8 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from bqdash.cli import _engine_range, main
-from bqdash.config import load_config
+from axial.cli import _engine_range, main
+from axial.config import load_config
 
 
 def test_check(repo, monkeypatch):
@@ -27,16 +27,16 @@ def test_outside_a_project_is_a_clean_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     r = CliRunner().invoke(main, ["check"])
     assert r.exit_code == 1
-    assert "bqdash init" in r.output and "Traceback" not in r.output
+    assert "axial init" in r.output and "Traceback" not in r.output
 
 
 def test_init_creates_a_project_that_checks_clean(tmp_path, monkeypatch):
     target = tmp_path / "my-ops"
     r = CliRunner().invoke(main, ["init", str(target), "--billing-project", "acme-bi", "--location", "EU"])
     assert r.exit_code == 0, r.output
-    for f in ("bqdash.yaml", ".gitignore", "AGENTS.md", "queries/orders_daily.sql", "dashboards/overview.yaml"):
+    for f in ("axial.yaml", ".gitignore", "AGENTS.md", "queries/orders_daily.sql", "dashboards/overview.yaml"):
         assert (target / f).exists(), f
-    raw = yaml.safe_load((target / "bqdash.yaml").read_text())
+    raw = yaml.safe_load((target / "axial.yaml").read_text())
     assert raw["bigquery"] == {**raw["bigquery"], "billing_project": "acme-bi", "location": "EU"}
     cfg = load_config(target, environ={})
     assert cfg.engine and cfg.billing_project == "acme-bi"
@@ -58,7 +58,7 @@ def test_up_live_requires_billing_project(tmp_path, monkeypatch):
     target = tmp_path / "p"
     CliRunner().invoke(main, ["init", str(target)])
     monkeypatch.chdir(target)
-    for k in [k for k in os.environ if k.startswith("BQDASH_")]:
+    for k in [k for k in os.environ if k.startswith("AXIAL_")]:
         monkeypatch.delenv(k)
     r = CliRunner().invoke(main, ["up", "--no-open"])
     assert r.exit_code == 1 and "billing_project is not set" in r.output

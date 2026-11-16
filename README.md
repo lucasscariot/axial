@@ -1,12 +1,12 @@
 <div align="center">
 
-# bqdash
+# Axial
 
-**BigQuery dashboards as code. You can see what every tile costs.**
+**SQL dashboards as code. You can see what every tile costs.**
 
 Write SQL and a few lines of YAML, commit them to Git, and run the dashboard locally with one
-command. Every tile links to the BigQuery job that ran it, with its timing, bytes billed and
-SQL version.
+command. Use BigQuery or a local DuckDB file. On BigQuery, every tile links to the job that
+ran it, with its timing, bytes billed and SQL version.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![BigQuery](https://img.shields.io/badge/warehouse-BigQuery-4285F4)](https://cloud.google.com/bigquery)
@@ -15,12 +15,12 @@ SQL version.
 </div>
 
 ```sh
-bqdash init my-ops && cd my-ops && bqdash up --fixture
+axial init my-ops && cd my-ops && axial up --fixture
 ```
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/dashboard-dark.png">
-  <img alt="A bqdash dashboard: four KPIs, a daily trend, a bar chart and an exceptions table, each tile showing its load time" src="docs/dashboard.png">
+  <img alt="An Axial dashboard: four KPIs, a daily trend, a bar chart and an exceptions table, each tile showing its load time" src="docs/dashboard.png">
 </picture>
 
 *Illustrative data from the test project, shown in live mode against a simulated warehouse.
@@ -31,13 +31,13 @@ The amber dot marks a tile that took over 3 seconds to load.*
 - **Dashboards in Git:** each dashboard is one YAML file. Each query is a `.sql` file plus a
   `.yaml` file that declares its typed params and output columns. Review changes in pull
   requests, like any other code.
-- **One command to launch:** `bqdash up` checks the project, your credentials and the engine
+- **One command to launch:** `axial up` checks the project, your credentials and the engine
   version, then serves the dashboard on 127.0.0.1 and opens the browser.
 - **Calm and dense by default:**
   - Geist type, hairline cards, and light, dark or system themes.
   - Sticky table headers, right-aligned numbers, and explicit money, percent and duration
     formats.
-  - You choose what goes on the page; bqdash decides how it looks.
+  - You choose what goes on the page; Axial decides how it looks.
 - **Cost on every tile:** hover a tile and click **Inspect** to open the BigQuery job behind
   it: queue and execution time, bytes billed, slots, cache hit, the exact SQL version and
   a console link.
@@ -45,48 +45,60 @@ The amber dot marks a tile that took over 3 seconds to load.*
   requests share one in-flight job. A warm reload submits nothing.
 - **Guard rails:** typed and validated params, a single read-only `SELECT` per query,
   `maximum_bytes_billed` on every job, a row cap and a concurrency limit.
-- **Before/after measurements:** `bqdash bench` runs a query with both caches bypassed, and
+- **Before/after measurements:** `axial bench` runs a query with both caches bypassed, and
   the usage screen compares SQL versions on the same dates.
 - **Share as a PDF:** **Export PDF** in the toolbar (or Cmd/Ctrl+P) prints the dashboard as
   it is on screen: light theme, A4 landscape, vector charts, every loaded table row, and a
-  line saying when it was generated and from what data. `bqdash preview --pdf` does the same
+  line saying when it was generated and from what data. `axial preview --pdf` does the same
   from the command line.
 - **Ready for coding agents:** every project ships with rules, three skills for Codex and
   Claude Code, and free discovery commands with JSON output.
 
-bqdash is BigQuery-only and runs locally as a single process. A hosted mode is planned but
-not built.
+Axial supports BigQuery and local DuckDB files, and runs locally as a single process.
+A hosted mode is planned but not built.
 
 ## Quickstart
 
 ### 1. Install the prerequisites
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/), the
-[gcloud CLI](https://cloud.google.com/sdk/docs/install), and a Google Cloud project with
-BigQuery enabled to bill queries to. On macOS with Homebrew:
+For BigQuery, you need the [gcloud CLI](https://cloud.google.com/sdk/docs/install) and a
+Google Cloud project with BigQuery enabled to bill queries to. On macOS with Homebrew:
 
 ```sh
-brew install uv
 brew install --cask google-cloud-sdk
 ```
 
-### 2. Install bqdash
+### 2. Install Axial
+
+With Homebrew on macOS or Linux:
 
 ```sh
-uv tool install 'git+ssh://git@github.com/lucasscariot/bqdash.git@main'
-uv tool update-shell
-bqdash --version
+brew tap lucasscariot/axial https://github.com/lucasscariot/axial
+brew install lucasscariot/axial/axial
+axial --version
 ```
 
-The repository is private, so the install uses your GitHub SSH key. The built UI ships inside
-the package, so you don't need Node.
+This repository also serves as the Homebrew tap; the explicit URL is needed when first
+adding it. Homebrew installs Axial, Python and DuckDB support, with dependencies pinned by the
+source lockfile. The first package uses the immutable rename commit; subsequent versions
+follow tagged Axial releases.
+
+Alternatively, with [uv](https://docs.astral.sh/uv/getting-started/installation/):
+
+```sh
+uv tool install 'git+https://github.com/lucasscariot/axial.git@main'
+uv tool update-shell
+axial --version
+```
+
+The built UI ships inside the package, so you don't need Node or a GitHub account.
 
 ### 3. Create a project and look at it
 
 ```sh
-bqdash init my-ops --billing-project my-gcp-project --location EU
+axial init my-ops --billing-project my-gcp-project --location EU
 cd my-ops
-bqdash up --fixture
+axial up --fixture
 ```
 
 `--fixture` renders the example dashboard with representative data, with no BigQuery
@@ -96,8 +108,8 @@ account involved. Edit `dashboards/overview.yaml` and reload the page to see the
 
 ```sh
 gcloud auth application-default login
-bqdash dry-run orders_daily      # free: bytes estimate, tables read
-bqdash up
+axial dry-run orders_daily      # free: bytes estimate, tables read
+axial up
 ```
 
 First point `queries/orders_daily.sql` at one of your tables. Queries run with your
@@ -133,24 +145,24 @@ tiles:
 ```
 
 The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar`, `funnel`,
-`table` and markdown `text`. `bqdash guide dashboards` has the full reference.
+`table` and markdown `text`. `axial guide dashboards` has the full reference.
 
 ## Everyday use
 
 | Want to… | Run |
 | --- | --- |
-| Launch the project | `bqdash up` |
-| Launch without BigQuery | `bqdash up --fixture` |
-| Validate queries and dashboards | `bqdash check` |
-| See what a query would scan (free) | `bqdash dry-run <query>` |
-| Find tables and columns (free) | `bqdash tables`, `bqdash schema <table>` |
-| See what each query costs (free) | `bqdash usage`, or **Query usage** in the app |
-| Print a query's rows (billed) | `bqdash run <query> --start 2026-11-01 --end 2026-11-08` |
-| Measure a change, caches bypassed (billed) | `bqdash bench <query> --start … --end …` |
-| Screenshot a dashboard | `bqdash preview <dashboard> --fixture --screenshot out.png` |
-| Save a dashboard as a PDF to share | **Export PDF** in the app, or `bqdash preview <dashboard> --pdf out.pdf` |
-| Read the reference for your version | `bqdash guide [queries\|dashboards\|config\|cli]` |
-| Refresh agent files after an upgrade | `bqdash agents sync` |
+| Launch the project | `axial up` |
+| Launch without BigQuery | `axial up --fixture` |
+| Validate queries and dashboards | `axial check` |
+| See what a query would scan (free) | `axial dry-run <query>` |
+| Find tables and columns (free) | `axial tables`, `axial schema <table>` |
+| See what each query costs (free) | `axial usage`, or **Query usage** in the app |
+| Print a query's rows (billed) | `axial run <query> --start 2026-11-01 --end 2026-11-08` |
+| Measure a change, caches bypassed (billed) | `axial bench <query> --start … --end …` |
+| Screenshot a dashboard | `axial preview <dashboard> --fixture --screenshot out.png` |
+| Save a dashboard as a PDF to share | **Export PDF** in the app, or `axial preview <dashboard> --pdf out.pdf` |
+| Read the reference for your version | `axial guide [queries\|dashboards\|config\|cli\|migration]` |
+| Refresh agent files after an upgrade | `axial agents sync` |
 
 `--start` is inclusive and `--end` is exclusive. Most commands accept `--json`.
 
@@ -192,16 +204,16 @@ median execution time, bytes billed and slot-ms between versions.
 3. **Limit.** At most 4 jobs run at once, results are capped at 2,000 rows, and every job
    carries `maximum_bytes_billed`.
 4. **Trace.**
-   - Each job's ID is generated by bqdash and saved before submission.
-   - If a submit times out, bqdash looks up that same ID before retrying.
+   - Each job's ID is generated by Axial and saved before submission.
+   - If a submit times out, Axial looks up that same ID before retrying.
    - If the dashboard stops waiting, a background reconciler still records the final job stats.
 
-History lives in `.bqdash/history.sqlite3`, behind a storage interface. App cache hits reuse
+History lives in `.axial/history.sqlite3`, behind a storage interface. App cache hits reuse
 the original job, so spend is never counted twice.
 
 ## Built for coding agents
 
-Every project `bqdash init` creates includes:
+Every project `axial init` creates includes:
 
 | File | For |
 | --- | --- |
@@ -215,26 +227,34 @@ Every project `bqdash init` creates includes:
 ```
 
 `build-dashboard` takes the agent through these steps:
-1. Find tables (`bqdash tables`, `bqdash schema`).
+1. Find tables (`axial tables`, `axial schema`).
 2. Write the SQL and YAML.
-3. Check the cost (`bqdash dry-run`) and validate (`bqdash check`).
+3. Check the cost (`axial dry-run`) and validate (`axial check`).
 4. Look at a rendered screenshot before calling it done.
 
-`optimize-query` finds your costliest query and proves the improvement with `bqdash bench`.
+`optimize-query` finds your costliest query and proves the improvement with `axial bench`.
 `rebuild-dashboard` recreates a Metabase dashboard and produces a per-metric table to check
 its numbers against the original.
 
-Skills stay short and read `bqdash guide` for reference, so the instructions always match the
-installed engine. Generated files carry a `bqdash:managed` marker, and `bqdash agents sync`
-refreshes them after an upgrade. `bqdash up` tells you when they're stale.
+Skills stay short and read `axial guide` for reference, so the instructions always match the
+installed engine. Generated files carry an `axial:managed` marker, and `axial agents sync`
+refreshes them after an upgrade. `axial up` tells you when they're stale.
+
+## Migrating from bqdash
+
+Run `axial guide migration` for the full steps. Rename `bqdash.yaml` to `axial.yaml`,
+set `version: 2`, move `.bqdash/` to `.axial/` and update `storage.path`, `.gitignore`,
+environment overrides (`BQDASH_` → `AXIAL_`) and scripts. Stop the old process before
+moving history. Its SQLite format is unchanged. `axial agents sync` recognizes old
+managed markers and updates generated agent files without overwriting handwritten notes.
 
 ## Configuration
 
-`bqdash.yaml` is committed with the project, since none of its values are secrets. Override
-any value with an environment variable named `BQDASH_<SECTION>_<KEY>`:
+`axial.yaml` is committed with the project, since none of its values are secrets. Override
+any value with an environment variable named `AXIAL_<SECTION>_<KEY>`:
 
 ```sh
-BQDASH_BIGQUERY_BILLING_PROJECT=other-project BQDASH_SERVER_PORT=9000 bqdash up
+AXIAL_BIGQUERY_BILLING_PROJECT=other-project AXIAL_SERVER_PORT=9000 axial up
 ```
 
 | Section | Keys |
@@ -249,46 +269,56 @@ BQDASH_BIGQUERY_BILLING_PROJECT=other-project BQDASH_SERVER_PORT=9000 bqdash up
 | `storage` | `backend` (`sqlite`), `path` |
 
 To chart a local DuckDB file instead of BigQuery, create the project with
-`bqdash init my-dash --duckdb ../data/analytics.duckdb` (or set `warehouse: duckdb` and
+`axial init my-dash --duckdb ../data/analytics.duckdb` (or set `warehouse: duckdb` and
 `duckdb.path`). Queries keep `@params`, the file is opened read-only, and the cost columns
-disappear because nothing is billed. Install with the extra: `uv tool install
-'bqdash[duckdb] @ git+ssh://git@github.com/lucasscariot/bqdash.git'`.
+disappear because nothing is billed. The Homebrew installation includes DuckDB. With uv,
+install with the extra: `uv tool install
+'axial[duckdb] @ git+https://github.com/lucasscariot/axial.git@main'`.
 
-`engine: ">=0.1,<0.2"` pins the bqdash versions a project works with. `bqdash guide config`
+`engine: ">=0.1,<0.2"` pins the axial versions a project works with. `axial guide config`
 documents every key.
 
 ## Troubleshooting
 
 | Problem | What to try |
 | --- | --- |
-| `bqdash` is not found | Run `uv tool update-shell`, then open a new terminal |
-| `bigquery.billing_project is not set` | Set it in `bqdash.yaml`, set `BQDASH_BIGQUERY_BILLING_PROJECT`, or use `--fixture` |
+| `axial` is not found | For Homebrew, follow `brew shellenv` setup instructions; for uv, run `uv tool update-shell`, then open a new terminal |
+| `bigquery.billing_project is not set` | Set it in `axial.yaml`, set `AXIAL_BIGQUERY_BILLING_PROJECT`, or use `--fixture` |
 | `no Google credentials found` | Run `gcloud auth application-default login` |
-| `this project needs bqdash …` | Install a version inside the project's `engine:` range |
-| A tile says the job exceeded the bytes limit | `bqdash dry-run <query>`; filter on the partition column, or raise `maximum_bytes_billed` deliberately |
+| `this project needs axial …` | Install a version inside the project's `engine:` range |
+| A tile says the job exceeded the bytes limit | `axial dry-run <query>`; filter on the partition column, or raise `maximum_bytes_billed` deliberately |
 | A tile shows **Truncated** | The result passed the row cap; aggregate more in SQL or add `LIMIT @limit` |
-| A tile timed out | The job keeps running; its stats are reconciled later. Check **Query usage** or run `bqdash reconcile` |
-| `agent files differ from this engine version` | Run `bqdash agents sync` |
+| A tile timed out | The job keeps running; its stats are reconciled later. Check **Query usage** or run `axial reconcile` |
+| `agent files differ from this engine version` | Run `axial agents sync` |
 | `refusing to overwrite` on `init` | Use an empty or new directory |
-| `screenshots and PDFs need playwright` | `uv tool install --force --with-executables-from playwright 'bqdash[screenshot] @ git+ssh://git@github.com/lucasscariot/bqdash.git@main'`, then `playwright install chromium`. The in-app **Export PDF** button needs neither |
+| `screenshots and PDFs need playwright` | Use the uv installation with `uv tool install --force --with-executables-from playwright 'axial[screenshot] @ git+https://github.com/lucasscariot/axial.git@main'`, then `playwright install chromium`. The in-app **Export PDF** button needs neither |
 | Wrong location errors from BigQuery | Set `bigquery.location` to where the data lives (e.g. `EU`, `US`, `europe-west2`) |
 
 ## Update or uninstall
 
+For Homebrew:
+
 ```sh
-uv tool upgrade bqdash          # then, in each project: bqdash agents sync
-uv tool uninstall bqdash
+brew update && brew upgrade lucasscariot/axial/axial
+brew uninstall axial
 ```
 
-Uninstalling leaves your projects and their `.bqdash/` history untouched.
+For uv:
+
+```sh
+uv tool upgrade axial          # then, in each project: axial agents sync
+uv tool uninstall axial
+```
+
+Uninstalling leaves your projects and their `.axial/` history untouched.
 
 ## Development
 
 ```sh
-git clone git@github.com:lucasscariot/bqdash.git && cd bqdash
+git clone git@github.com:lucasscariot/axial.git && cd axial
 make install    # uv sync --all-extras + npm ci
 make test       # pytest + TypeScript type-check
-make web        # rebuild the UI into src/bqdash/web_dist (commit the result)
+make web        # rebuild the UI into src/axial/web_dist (commit the result)
 make preview    # render tests/project with fixture data
 ```
 
@@ -298,7 +328,7 @@ CI also builds the wheel, creates a project from it, and rejects a stale committ
 **Releasing:**
 
 [Google's release-please](https://github.com/googleapis/release-please) maintains a release
-PR as Conventional Commits land on `main`. It updates `pyproject.toml`, the bqdash version
+PR as Conventional Commits land on `main`. It updates `pyproject.toml`, the axial version
 in `uv.lock`, `CHANGELOG.md` and `.release-please-manifest.json` together.
 
 1. Use Conventional Commit PR titles; squash merging preserves them on `main`. While the
@@ -309,10 +339,25 @@ in `uv.lock`, `CHANGELOG.md` and `.release-please-manifest.json` together.
    must change. Wait for CI, then merge the release PR when ready to ship.
 3. Release-please creates the `vX.Y.Z` tag and GitHub release. CI also runs against the tag
    and checks that it matches the package version. Install a release with, for example,
-   `uv tool install --force 'git+ssh://git@github.com/lucasscariot/bqdash.git@v0.1.1'`.
+   `uv tool install --force 'git+https://github.com/lucasscariot/axial.git@v0.2.0'`
+   once that Axial release is published. Older tags through `v0.1.2` install bqdash.
+4. The release workflow dispatches `homebrew-update.yml`, which opens a separate PR pinning
+   `Formula/axial.rb` to the release archive and its SHA-256. Review its Homebrew install
+   tests on macOS and Linux, then merge it to make the release available to `brew upgrade`.
+   No additional token or tap repository is needed.
+
+The initial Axial 0.1.2 source snapshot is retained under the `axial-bootstrap-0.1.2`
+tag, so the first formula remains downloadable after the rename branch is deleted.
+Subsequent version tags are managed by release-please.
+
+To retry a Homebrew update, run the **update homebrew** workflow on `main` with the published
+tag. To update the formula locally, run `uv run python scripts/update_homebrew.py vX.Y.Z` and open
+a PR. The formula uses `uv sync --frozen` at build time to install the release's locked
+dependencies into a private environment; it does not require uv at runtime. Browser
+automation for command-line screenshots and PDFs remains available through the uv install.
 
 The existing `0.1.0` is the development baseline, with history through `817e52c` already
-covered by its changelog notes. The next compatible change proposes `0.1.1`. Ordinary
+covered by its changelog notes. The rename is a breaking change and proposes `0.2.0`. Ordinary
 `chore:` and `ci:` commits do not trigger a release by themselves.
 
 The workflow uses the built-in `GITHUB_TOKEN`; no extra secret is needed. Repository

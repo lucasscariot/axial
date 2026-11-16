@@ -5,9 +5,9 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from bqdash import agents as ag
-from bqdash.cli import GUIDE_DIR, main
-from bqdash.registry import FORMATS, REDUCERS, TILE_TYPES
+from axial import agents as ag
+from axial.cli import GUIDE_DIR, main
+from axial.registry import FORMATS, REDUCERS, TILE_TYPES
 
 from .conftest import FakeWarehouse
 
@@ -70,9 +70,24 @@ def test_sync_restores_edits_removes_stale_and_respects_unmanaged(project):
 def test_marker_roundtrip():
     body = "---\nname: x\ndescription: y\n---\n# Body\n"
     marked = ag.add_marker(body, "1.2.3")
-    assert marked.startswith("---\nname: x") and "bqdash:managed version=1.2.3" in marked
+    assert marked.startswith("---\nname: x") and "axial:managed version=1.2.3" in marked
     assert ag.strip_marker(marked) == body
     assert ag.strip_marker(ag.add_marker("# A\n", "1")) == "# A\n"
+
+
+def test_sync_migrates_legacy_managed_files_without_force(project):
+    for rel in ag.desired_files():
+        path = project / rel
+        path.write_text(path.read_text().replace("axial:managed", "bqdash:managed"))
+    notes = (project / "CONTEXT.md").read_text()
+    assert run("agents", "sync", "--check").exit_code == 1
+    result = run("agents", "sync")
+    assert result.exit_code == 0, result.output
+    for rel in ag.desired_files():
+        text = (project / rel).read_text()
+        assert "axial:managed" in text and "bqdash:managed" not in text
+    assert (project / "CONTEXT.md").read_text() == notes
+    assert run("agents", "sync", "--check").exit_code == 0
 
 
 def test_guide_documents_every_tile_type_format_and_reducer():
@@ -92,8 +107,8 @@ def test_skills_only_reference_real_commands():
     names = set(main.commands)
     for name in SKILLS + ["AGENTS"]:
         path = ag.SOURCE / ("AGENTS.md" if name == "AGENTS" else f"skills/{name}/SKILL.md")
-        for cmd in re.findall(r"`bqdash ([a-z-]+)", path.read_text()):
-            assert cmd in names, f"{path.name} mentions unknown command bqdash {cmd}"
+        for cmd in re.findall(r"`axial ([a-z-]+)", path.read_text()):
+            assert cmd in names, f"{path.name} mentions unknown command axial {cmd}"
 
 
 def test_check_json(repo, monkeypatch):
@@ -106,7 +121,7 @@ def test_check_json(repo, monkeypatch):
 @pytest.fixture
 def fake_wh(monkeypatch):
     wh = FakeWarehouse()
-    monkeypatch.setattr("bqdash.cli._warehouse", lambda cfg: wh)
+    monkeypatch.setattr("axial.cli._warehouse", lambda cfg: wh)
     return wh
 
 
@@ -133,7 +148,7 @@ def test_dry_run_run_and_usage_json(repo, monkeypatch, fake_wh):
     r = run("run", "bookings_daily", "--start", "2026-11-01", "--end", "2026-11-08", "--json")
     assert r.exit_code == 0, r.output
     out = json.loads(r.output)
-    assert out["rows"] == fake_wh.rows and out["job_id"].startswith("bqdash_bookings_daily_")
+    assert out["rows"] == fake_wh.rows and out["job_id"].startswith("axial_bookings_daily_")
 
     r = run("usage", "--json")
     q = next(x for x in json.loads(r.output)["queries"] if x["query_id"] == "bookings_daily")

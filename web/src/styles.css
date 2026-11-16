@@ -1,4 +1,4 @@
-/* bqdash design tokens. Neutral surfaces, hairline borders, one accent; data carries the colour. */
+/* axial design tokens. Neutral surfaces, hairline borders, one accent; data carries the colour. */
 :root {
   color-scheme: light;
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -372,7 +372,7 @@ pre.sql {
 }
 /* ---------- print / PDF export ----------
    html[data-printing] is set by print.ts before the dialog opens (and by ?print=1 for
-   `bqdash preview --pdf`): the page takes the printable width of A4 landscape so charts redraw
+   `axial preview --pdf`): the page takes the printable width of A4 landscape so charts redraw
    at their final size, and everything interactive is removed. */
 @page { size: A4 landscape; margin: 12mm; }
 .print-only { display: none; }

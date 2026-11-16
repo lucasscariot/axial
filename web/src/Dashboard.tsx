@@ -40,7 +40,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   const [inspect, setInspect] = useState<InspectTarget | null>(null);
   const [nonce, setNonce] = useState(0);
   const abort = useRef<AbortController | null>(null);
-  // "auto" (?print=1, used by `bqdash preview --pdf`) lays the page out for print without
+  // "auto" (?print=1, used by `axial preview --pdf`) lays the page out for print without
   // opening the dialog; "dialog" is the Export PDF button.
   const [printing, setPrinting] = useState<"off" | "auto" | "dialog">(
     () => new URLSearchParams(window.location.search).get("print") === "1" ? "auto" : "off");
@@ -203,7 +203,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
       </div>
 
       {def.errors.length > 0 && (
-        <div className="banner error"><b>bqdash check</b> found problems<ul>{def.errors.map((e) => <li key={e}><code>{e}</code></li>)}</ul></div>
+        <div className="banner error"><b>axial check</b> found problems<ul>{def.errors.map((e) => <li key={e}><code>{e}</code></li>)}</ul></div>
       )}
 
       <div className="grid">

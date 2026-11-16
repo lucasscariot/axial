@@ -38,7 +38,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bqdash"
+name = "axial"
 version = "0.1.2"
 source = { editable = "." }
 dependencies = [

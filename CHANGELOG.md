@@ -1,8 +1,29 @@
 # Changelog
 
-Projects pin a compatible range in `bqdash.yaml` (`engine: ">=0.1,<0.2"`). While the engine
+Projects pin a compatible range in `axial.yaml` (`engine: ">=0.1,<0.2"`). While the engine
 is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists them under
 **Upgrade notes**.
+
+## Unreleased
+
+### Breaking changes
+
+- Rename bqdash to **Axial**, including the `axial` CLI and Python package, public
+  repository, UI text, BigQuery job labels and generated project/agent files.
+- Config format version **2** uses `axial.yaml`, `AXIAL_` environment overrides and
+  `.axial/history.sqlite3` as the default history path.
+
+### Features
+
+- Homebrew installation from this repository's tap, with locked dependencies and
+  DuckDB support. Release automation opens formula update PRs with verified checksums.
+
+**Upgrade notes:** run `axial guide migration`. Stop the old engine, rename
+`bqdash.yaml` to `axial.yaml`, set `version: 2`, move `.bqdash/` to `.axial/` and update
+`storage.path`, ignore rules, environment variables and scripts. Keep custom history
+paths. The SQLite schema is unchanged. `axial agents sync` upgrades old managed markers
+without `--force`, preserving handwritten files and `CONTEXT.md`. Release tags through
+`v0.1.2` retain the old package name; the initial Homebrew formula pins the rename commit.
 
 ## [0.1.2](https://github.com/lucasscariot/bqdash/compare/v0.1.1...v0.1.2) (2026-11-13)
 

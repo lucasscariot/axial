@@ -3,6 +3,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  build: { outDir: "../src/bqdash/web_dist", emptyOutDir: true, chunkSizeWarningLimit: 1500 },
+  build: { outDir: "../src/axial/web_dist", emptyOutDir: true, chunkSizeWarningLimit: 1500 },
   server: { proxy: { "/api": "http://127.0.0.1:8765" } },
 });
