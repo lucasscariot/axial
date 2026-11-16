@@ -32,6 +32,8 @@ jobs:
           tap="$(brew --repository)/Library/Taps/lucasscariot/homebrew-axial"
           mkdir -p "$(dirname "$tap")"
           ln -s "$GITHUB_WORKSPACE" "$tap"
+          brew trust --formula lucasscariot/axial/axial
       - run: brew style lucasscariot/axial/axial
       - run: brew install --build-from-source lucasscariot/axial/axial
+      - run: brew audit lucasscariot/axial/axial
       - run: brew test lucasscariot/axial/axial

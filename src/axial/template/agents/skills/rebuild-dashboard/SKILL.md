@@ -1,6 +1,6 @@
 ---
 name: rebuild-dashboard
-description: Recreate an existing dashboard (Metabase, Looker Studio, a screenshot or a spec) as a axial dashboard and verify that its numbers match the original. Use when migrating or replacing a dashboard.
+description: Recreate an existing dashboard (Metabase, Looker Studio, a screenshot or a spec) as an Axial dashboard and verify that its numbers match the original. Use when migrating or replacing a dashboard.
 ---
 
 # Rebuild an existing dashboard

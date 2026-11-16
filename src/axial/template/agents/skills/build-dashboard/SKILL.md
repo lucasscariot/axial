@@ -1,6 +1,6 @@
 ---
 name: build-dashboard
-description: Create or extend a axial dashboard from a request such as "a dashboard of cancellations by region" or "add a revenue trend to ops". Covers finding the right BigQuery tables, writing the saved query, checking cost, laying out tiles and checking the rendered page.
+description: Create or extend an Axial dashboard from a request such as "a dashboard of cancellations by region" or "add a revenue trend to ops". Covers finding the right BigQuery tables, writing the saved query, checking cost, laying out tiles and checking the rendered page.
 ---
 
 # Build a dashboard

@@ -20,7 +20,7 @@ conventions, and it overrides anything generic here.
   `bench`, then parse the result rather than reading text.
 - **Done means:**
   - `axial check` reports 0 errors.
-  - You looked at a `axial preview <dashboard> --fixture --screenshot` image.
+  - You looked at an `axial preview <dashboard> --fixture --screenshot` image.
   - The dry-run bytes are reasonable for the date range.
 - **Don't touch:** `.axial/`, the app's local history. Don't edit files marked
   `axial:managed`; `axial agents sync` overwrites them. Put project knowledge in `CONTEXT.md`.

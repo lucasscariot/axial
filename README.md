@@ -347,7 +347,7 @@ in `uv.lock`, `CHANGELOG.md` and `.release-please-manifest.json` together.
    No additional token or tap repository is needed.
 
 To retry a Homebrew update, run the **update homebrew** workflow on `main` with the published
-tag. To update the formula locally, run `python3 scripts/update_homebrew.py vX.Y.Z` and open
+tag. To update the formula locally, run `uv run python scripts/update_homebrew.py vX.Y.Z` and open
 a PR. The formula uses `uv sync --frozen` at build time to install the release's locked
 dependencies into a private environment; it does not require uv at runtime. Browser
 automation for command-line screenshots and PDFs remains available through the uv install.
