@@ -72,7 +72,8 @@ in mind. `maximum_bytes_billed`, the row cap and the concurrency limit still app
 
 Set `axial.yaml` values per environment with `AXIAL_<SECTION>_<KEY>` variables, e.g.
 `--set-env-vars AXIAL_BIGQUERY_BILLING_PROJECT=prod-project,AXIAL_DISPLAY_TITLE=Ops`.
-Cloud Run sets `PORT`; `axial serve --port` overrides it. `AXIAL_APP_REVISION` is not a
+Cloud Run sets `PORT`; `axial serve --port` overrides it. The project is copied to `/app`, so
+set `display.title`; otherwise the top bar shows `app`. `AXIAL_APP_REVISION` is not a
 config key and is not parsed as one.
 
 ## History is ephemeral by default
