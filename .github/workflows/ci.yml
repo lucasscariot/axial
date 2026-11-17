@@ -55,3 +55,43 @@ jobs:
         run: |
           v=$(uv run python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME != version $v"; exit 1; }
+
+  # The files `axial init` writes must work together: build the project's image from this
+  # commit's engine, then run the project's own CI steps exactly as its workflow lists them.
+  template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AXIAL_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.AXIAL_REF }}  # the same commit the image installs, not the merge commit
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - name: Create a project and pin it to this commit
+        run: |
+          uv run axial init /tmp/demo --billing-project demo-project --location EU
+          sed -i "s/^ARG AXIAL_REF=.*/ARG AXIAL_REF=$AXIAL_REF/" /tmp/demo/Dockerfile
+          grep -q "^ARG AXIAL_REF=$AXIAL_REF$" /tmp/demo/Dockerfile
+      - name: Run the project's workflow steps
+        working-directory: /tmp/demo
+        run: |
+          uv run --project "$GITHUB_WORKSPACE" python - <<'PY'
+          import subprocess, yaml
+          steps = yaml.safe_load(open(".github/workflows/check.yml"))["jobs"]["check"]["steps"]
+          commands = [s for s in steps if "run" in s and "if" not in s]
+          assert len(commands) >= 4, commands
+          for step in commands:
+              print(f"::group::{step['name']}", flush=True)
+              subprocess.run(["bash", "-euo", "pipefail", "-c", step["run"]], check=True)
+              print("::endgroup::", flush=True)
+          PY
+      - name: The image holds only runtime files
+        run: |
+          files=$(docker exec dashboards sh -c 'cd /app && find . -type f -not -path "./.axial/*" | sort | tr "\n" " "')
+          echo "$files"
+          test "$files" = "./Dockerfile ./axial.yaml ./dashboards/overview.yaml ./queries/orders_daily.sql ./queries/orders_daily.yaml "
+      - name: Show server logs
+        if: always()
+        run: docker logs dashboards || true

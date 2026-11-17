@@ -1,0 +1,33 @@
+# Checks every pull request with the engine version this project pins in its Dockerfile.
+# Nothing here needs Google credentials or runs a billed query.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image with the pinned engine
+        run: docker build --build-arg APP_REVISION="$GITHUB_SHA" -t dashboards:ci .
+      - name: Check config, queries, dashboards and fixtures
+        run: docker run --rm -v "$PWD:/app:ro" dashboards:ci axial check
+      - name: Check agent files match the engine
+        run: docker run --rm -v "$PWD:/app:ro" dashboards:ci axial agents sync --check
+      - name: Serve the image with fixture data
+        run: |
+          docker run -d --name dashboards -p 127.0.0.1:8080:8080 dashboards:ci axial serve --fixture
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:8080/api/health
+      - name: Show server logs
+        if: always()
+        run: docker logs dashboards || true

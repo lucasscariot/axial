@@ -1,9 +1,12 @@
-# Container image for this axial project, e.g. for Cloud Run. `axial guide deploy` explains
-# building, deploying and why the service must never be reachable without authentication.
+# Container image for this axial project. `axial deploy` builds and runs it on Cloud Run
+# behind Identity-Aware Proxy; `axial guide deploy` explains why the service must never be
+# reachable without authentication.
 #
-#   docker build --build-arg APP_REVISION=$(git rev-parse --short=12 HEAD) -t my-dashboards .
+#   docker build -t my-dashboards .
 #
-# AXIAL_REF is the axial release (or commit) installed, with its locked dependencies.
+# AXIAL_REF is this project's one engine pin: the axial release (or commit) the image
+# installs, with its locked dependencies. CI checks the project with this image, and
+# `axial check` fails if a release pinned here falls outside `engine:` in axial.yaml.
 
 FROM python:3.13-slim AS engine
 COPY --from=ghcr.io/astral-sh/uv:0.9.30 /uv /usr/local/bin/uv
@@ -19,6 +22,7 @@ FROM python:3.13-slim
 COPY --from=engine /opt/axial /opt/axial
 RUN useradd --uid 10001 --create-home axial
 WORKDIR /app
+# .dockerignore is an allowlist, so this copies axial.yaml, dashboards/ and queries/ only
 COPY . /app
 # history (storage.path) is written under .axial/; it lasts only as long as the container
 RUN mkdir -p /app/.axial && chown axial:axial /app/.axial

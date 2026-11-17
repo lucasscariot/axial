@@ -2,13 +2,64 @@
 
 `axial serve` runs a project as a container-ready server: it checks the project, binds
 `0.0.0.0` and listens on `$PORT` (else `server.port`). It opens no browser and logs each
-request. `axial init` writes a `Dockerfile` and `.dockerignore` for it. This is one process
-serving one project; there is no hosted mode with accounts or sharing built into Axial.
+request. `axial init` writes a `Dockerfile`, a `.dockerignore` and a CI workflow for it, and
+`axial deploy` publishes it. This is one process serving one project; there is no hosted
+mode with accounts or sharing built into Axial.
 
 **Never deploy it publicly.** Axial has no login of its own. Anyone who can reach the
 service can load dashboards, which run billed BigQuery jobs as the service account.
 Put it behind Identity-Aware Proxy (IAP) or Cloud Run IAM, and deploy with
 `--no-allow-unauthenticated`.
+
+## axial deploy
+
+Describe the service in `axial.yaml`, commit, and run `axial deploy`:
+
+```yaml
+bigquery:
+  datasets: [my-project.analytics]   # the service account gets read access to these
+deploy:
+  service: my-dashboards       # Cloud Run service; also names its image repository and service account
+  region: europe-west2
+  project: null                # defaults to bigquery.billing_project
+  viewers: [user:jane@example.com, group:ops@example.com]
+  record_viewers: false        # true records each viewer's email (see "Who ran what")
+```
+
+```sh
+axial deploy --dry-run         # print every gcloud command; changes nothing
+axial deploy                   # needs gcloud, signed in with rights to do the steps below
+```
+
+It deploys one fixed shape and has no other options. Each step is safe to repeat:
+
+1. Enables the Cloud Run, Cloud Build, Artifact Registry and IAP APIs.
+2. Creates the service account `<service>@<project>`, grants it `roles/bigquery.jobUser` on
+   the project and READER on each of `bigquery.datasets`. No key is created.
+3. Creates an Artifact Registry repository with immutable tags, and builds the image with
+   Cloud Build, tagged with the Git commit. The working tree must be clean. Only the files
+   `.dockerignore` allows are uploaded.
+4. Deploys the service with `--iap --no-allow-unauthenticated`, one instance at most, scaled
+   to zero when idle, with `/api/health` as its startup probe.
+5. Lets only the IAP service agent invoke the service, and grants each of `deploy.viewers`
+   `roles/iap.httpsResourceAccessor` on it.
+
+Then it prints the URL. Open it signed out and signed in before sharing it: a signed-out
+visit must redirect to Google sign-in. `--skip-build` redeploys the image already built for
+this commit, and `--account` picks the gcloud account. Removing someone from `deploy.viewers`
+does not revoke their access; remove the IAP binding in the console or with gcloud.
+
+`axial deploy` covers BigQuery projects with the default SQLite history. For PostgreSQL
+history or a DuckDB file, use the manual steps below.
+
+## Continuous integration
+
+`.github/workflows/check.yml` builds the image and uses it to run `axial check`,
+`axial agents sync --check` and a fixture-mode `axial serve` probe on every pull request.
+It needs no Google credentials and runs no billed query. Because CI and Cloud Run both run
+the image, the Dockerfile's `AXIAL_REF` is the project's one engine pin. `axial check` fails
+if a release pinned there is outside `engine:` in `axial.yaml`; local installs are held to
+the same range when they start.
 
 ## Build
 
@@ -23,9 +74,11 @@ docker run --rm -p 8080:8080 my-dashboards axial serve --fixture   # try it loca
   project's `engine:` range. The build fails if that ref does not install an `axial` command.
 - `APP_REVISION` sets `AXIAL_APP_REVISION`, which Axial records as each job's project
   commit. The image has no `.git`, so without it the commit is blank.
-- `.dockerignore` keeps `.axial/` history, `.git/`, local DuckDB files, `.env` files and
-  credential JSON out of the image. A DuckDB project needs its file at runtime: remove the
-  `*.duckdb` line only if the file is meant to ship in the image.
+- `.dockerignore` is an allowlist: only `axial.yaml`, `dashboards/*.yaml` and
+  `queries/*.sql|yaml` reach the image. History, `.git/`, fixtures, `.env` files and
+  credentials cannot leak in. Add a `!` line for anything else the server needs, such as
+  `!assets/` and `!assets/*` for `display.logo`, or a DuckDB file that must ship in the image.
+  Without fixtures, `axial serve --fixture` in the image makes up rows from `columns`.
 - The container runs as an unprivileged `axial` user and starts `axial serve` on port 8080.
 
 `GET /api/health` returns `{"status": "ok"}` without touching the warehouse or history,

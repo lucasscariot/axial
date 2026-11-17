@@ -156,6 +156,7 @@ The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar
 | Launch the project | `axial up` |
 | Launch without BigQuery | `axial up --fixture` |
 | Serve in a container (`0.0.0.0`, `$PORT`, no browser) | `axial serve` |
+| Publish on Cloud Run behind IAP | `axial deploy` (`--dry-run` prints the commands) |
 | Validate queries and dashboards | `axial check` |
 | See what a query would scan (free) | `axial dry-run <query>` |
 | Find tables and columns (free) | `axial tables`, `axial schema <table>` |
@@ -248,15 +249,23 @@ hand-written file. Project notes go in `CONTEXT.md`.
 
 ## Deploy to Cloud Run
 
-Every project `axial init` creates has a `Dockerfile` and `.dockerignore`. The image
-installs the project's axial release, copies the project (without `.axial/` history, local
-DuckDB files or credentials), runs as a non-root user and starts `axial serve`.
+Every project `axial init` creates has a `Dockerfile`, an allowlist `.dockerignore` and a
+GitHub Actions workflow. The image installs the project's axial release, copies only
+`axial.yaml`, `dashboards/` and `queries/`, runs as a non-root user and starts `axial serve`.
+The workflow checks every pull request with that same image, so the Dockerfile's `AXIAL_REF`
+is the project's one engine pin.
+
+Set `deploy.service`, `deploy.region` and `deploy.viewers` in `axial.yaml`, list the datasets
+the dashboards read in `bigquery.datasets`, commit, then:
 
 ```sh
-docker build --build-arg APP_REVISION=$(git rev-parse --short=12 HEAD) -t my-dashboards .
-gcloud run deploy my-dashboards --image … --service-account … \
-  --no-allow-unauthenticated --max-instances=1
+axial deploy --dry-run    # print the gcloud commands
+axial deploy              # build this commit and run it on Cloud Run behind IAP
 ```
+
+It creates a dedicated service account with BigQuery job and dataset read access, builds the
+image with Cloud Build, deploys a private single-instance service, and lets only the listed
+viewers through Identity-Aware Proxy.
 
 **Never deploy it publicly.** Axial has no login. Anyone who can reach it can run billed
 queries as the service account, so put it behind Identity-Aware Proxy or Cloud Run IAM.
@@ -291,6 +300,7 @@ AXIAL_BIGQUERY_BILLING_PROJECT=other-project AXIAL_SERVER_PORT=9000 axial up
 | `display` | `title`, `locale`, `currency`, `brand_color`, `logo`, `slow_tile_ms` |
 | `server` | `port` (`axial up` uses the next free port if it's taken; `axial serve` prefers `$PORT`) |
 | `storage` | `backend` (`sqlite` \| `postgres`), `path` (SQLite), `url` and `pool_size` (PostgreSQL) |
+| `deploy` | `service`, `region`, `project`, `viewers`, `record_viewers` (used by `axial deploy`) |
 
 To chart a local DuckDB file instead of BigQuery, create the project with
 `axial init my-dash --duckdb ../data/analytics.duckdb` (or set `warehouse: duckdb` and

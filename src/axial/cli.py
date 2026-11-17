@@ -23,7 +23,11 @@ TEMPLATE_DIR = Path(__file__).parent / "template" / "project"
 GUIDE_DIR = Path(__file__).parent / "guide"
 PORT_SEARCH = 20
 # the template stores its dotfiles under plain names; init writes them back under their real ones
-TEMPLATE_RENAMES = {"gitignore.txt": ".gitignore", "dockerignore.txt": ".dockerignore"}
+TEMPLATE_RENAMES = {"gitignore.txt": ".gitignore", "dockerignore.txt": ".dockerignore", "github": ".github"}
+
+
+def _template_target(relative: Path) -> Path:
+    return Path(*(TEMPLATE_RENAMES.get(part, part) for part in relative.parts))
 
 
 class Group(click.Group):
@@ -190,8 +194,7 @@ def init(directory: Path, billing_project, location, duckdb_path):
     """Create a dashboard project in DIRECTORY."""
     directory = directory.resolve()
     files = [p for p in TEMPLATE_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
-    targets = {p: directory / p.relative_to(TEMPLATE_DIR).with_name(TEMPLATE_RENAMES.get(p.name, p.name))
-               for p in files}
+    targets = {p: directory / _template_target(p.relative_to(TEMPLATE_DIR)) for p in files}
     clashes = [t for t in targets.values() if t.exists()]
     if clashes:
         raise click.ClickException("refusing to overwrite: " + ", ".join(str(c.relative_to(directory)) for c in clashes))
@@ -216,6 +219,7 @@ def init(directory: Path, billing_project, location, duckdb_path):
     agents.apply(directory, agents.plan(directory))
     click.echo(f"Created axial project in {directory}")
     click.echo("  agent files: AGENTS.md, CLAUDE.md, .agents/skills/ (Codex), .claude/skills/ (Claude Code)")
+    click.echo("  hosting: Dockerfile, .dockerignore and .github/workflows/check.yml (see `axial guide deploy`)")
     click.echo("  fill in CONTEXT.md so agents know your tables and metric definitions\n")
     click.echo("Next:")
     click.echo(f"  cd {directory}")
@@ -287,6 +291,27 @@ def serve(fixture, host, port):
     click.echo(f"axial {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else _target(cfg)}")
     click.echo(f"serving on {host}:{server.config.port}")
     server.run()
+
+
+@main.command("deploy")
+@click.option("--dry-run", is_flag=True, help="print every command without changing anything")
+@click.option("--skip-build", is_flag=True, help="reuse the image already built for this commit")
+@click.option("--account", help="gcloud account to act as (default: the active one)")
+def deploy_command(dry_run, skip_build, account):
+    """Build this commit's image and run it on Cloud Run behind IAP, as `deploy:` in axial.yaml describes."""
+    from .deploy import deploy
+
+    cfg, reg = _project()
+    errors = _print_issues(run_checks(reg))
+    if errors:
+        raise click.ClickException(f"{errors} error(s) in dashboards or queries; fix them or run `axial check`")
+    out = deploy(cfg, account=account, skip_build=skip_build, dry_run=dry_run)
+    if dry_run:
+        click.echo(f"dry run: nothing was changed. Would deploy {out['image']}")
+        return
+    _json(out)
+    click.echo("Open the URL signed out and signed in as a viewer before sharing it: a signed-out visit "
+               "must redirect to Google sign-in.", err=True)
 
 
 # --- authoring ---------------------------------------------------------------

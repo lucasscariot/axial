@@ -25,4 +25,10 @@ checks the query plan instead of estimating bytes.
 | `axial up` | launch the app; every dashboard load can run jobs |
 | `axial serve [--fixture] [--host --port]` | serve for a container: `0.0.0.0`, `$PORT`, no browser (`axial guide deploy`) |
 
+**Changes cloud resources:** run it only when asked to publish the project.
+
+| command | |
+|---|---|
+| `axial deploy [--dry-run] [--skip-build] [--account A]` | build this commit and run it on Cloud Run behind IAP (`axial guide deploy`); `--dry-run` only prints the commands |
+
 `--start` is inclusive and `--end` is exclusive (YYYY-MM-DD). They default to the last 7 days.

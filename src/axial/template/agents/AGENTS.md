@@ -14,6 +14,8 @@ conventions, and it overrides anything generic here.
 - **Billed commands:** `run`, `bench` and live dashboard loads run billed BigQuery jobs.
   `dry-run` first. If the estimate is above $1, or you'd run more than a handful of jobs,
   ask before running.
+- **Publishing:** `deploy` changes cloud resources, IAM and who can see the data. Run it only
+  when the user asks; `deploy --dry-run` is free and changes nothing.
 - **SQL:** one read-only `SELECT`/`WITH` per query, with `@params`. `end_date` is exclusive.
   Compute rates in SQL over the whole period, never by averaging.
 - **Output:** pass `--json` to `check`, `dry-run`, `tables`, `schema`, `usage`, `run` and
@@ -28,7 +30,7 @@ conventions, and it overrides anything generic here.
 ## Reference
 
 `axial guide <topic>` prints the reference for the installed engine version. Topics:
-`queries`, `dashboards`, `config`, `cli`, `migration`. Read the relevant topic before writing files;
+`queries`, `dashboards`, `config`, `cli`, `deploy`, `migration`. Read the relevant topic before writing files;
 don't rely on memory.
 
 ## Skills

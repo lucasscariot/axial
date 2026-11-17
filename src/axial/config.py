@@ -15,7 +15,7 @@ from packaging.version import Version
 
 CONFIG_FILE = "axial.yaml"
 SCHEMA_VERSION = 2
-SECTIONS = ("bigquery", "duckdb", "billing", "execution", "display", "server", "storage")
+SECTIONS = ("bigquery", "duckdb", "billing", "execution", "display", "server", "storage", "deploy")
 # Every key axial.yaml may hold. Anything else is rejected, so a typo cannot silently fall
 # back to a default.
 TOP_LEVEL_KEYS = {"version", "engine", "warehouse", *SECTIONS}
@@ -27,6 +27,7 @@ SECTION_KEYS = {
     "display": {"title", "locale", "currency", "brand_color", "logo", "slow_tile_ms"},
     "server": {"port", "trust_iap_user"},
     "storage": {"backend", "path", "url", "pool_size"},
+    "deploy": {"service", "region", "project", "viewers", "record_viewers"},
 }
 WAREHOUSES = ("bigquery", "duckdb")
 STORAGE_BACKENDS = ("sqlite", "postgres")
@@ -35,6 +36,7 @@ STORAGE_BACKENDS = ("sqlite", "postgres")
 RAW_ENV = {("storage", "url")}
 ENV_PREFIX = "AXIAL_"
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+VIEWER_KINDS = ("user", "group", "domain", "serviceAccount")
 
 
 def engine_version() -> str:
@@ -80,6 +82,12 @@ class Config:
     history_path: Path = Path(".axial/history.sqlite3")
     storage_url: str | None = field(default=None, repr=False)  # may hold a password; never displayed
     storage_pool_size: int = 4
+    # `axial deploy`: the Cloud Run service this project is published as
+    deploy_service: str | None = None
+    deploy_region: str | None = None
+    deploy_project: str | None = None  # defaults to billing_project
+    deploy_viewers: list[str] = field(default_factory=list)  # IAM members allowed through IAP
+    deploy_record_viewers: bool = False
 
     @property
     def queries_dir(self) -> Path:
@@ -176,6 +184,19 @@ def _datasets(v: Any) -> list[str]:
     return v
 
 
+def _viewers(v: Any) -> list[str]:
+    if v is None:
+        return []
+    if isinstance(v, str):
+        v = [x.strip() for x in v.split(",") if x.strip()]
+    ok = isinstance(v, list) and all(
+        isinstance(x, str) and x.partition(":")[0] in VIEWER_KINDS and x.partition(":")[2] for x in v)
+    if not ok:
+        raise ConfigError(f"{CONFIG_FILE}: deploy.viewers must be a list of IAM members such as "
+                          "[user:jane@example.com, group:ops@example.com]")
+    return v
+
+
 def _section(raw: dict, name: str) -> dict:
     v = raw.get(name) or {}
     if not isinstance(v, dict):
@@ -213,6 +234,7 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
     bq, billing, ex = _section(raw, "bigquery"), _section(raw, "billing"), _section(raw, "execution")
     duck = _section(raw, "duckdb")
     disp, server, storage = _section(raw, "display"), _section(raw, "server"), _section(raw, "storage")
+    deploy = _section(raw, "deploy")
 
     def num(section: dict, key: str, default: Any, cast):
         v = section.get(key, default)
@@ -266,6 +288,11 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         history_path=root / storage.get("path", ".axial/history.sqlite3"),
         storage_url=str(storage["url"]) if storage.get("url") else None,
         storage_pool_size=num(storage, "pool_size", 4, int),
+        deploy_service=deploy.get("service"),
+        deploy_region=deploy.get("region"),
+        deploy_project=deploy.get("project"),
+        deploy_viewers=_viewers(deploy.get("viewers")),
+        deploy_record_viewers=deploy.get("record_viewers", False),
     )
     if cfg.local:
         # A local database bills nothing: there are no bytes billed, slots or job costs to show.
@@ -282,6 +309,8 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
             raise ConfigError("display.logo must be inside the project")
     if not isinstance(cfg.trust_iap_user, bool):
         raise ConfigError(f"server.trust_iap_user must be true or false, got {cfg.trust_iap_user!r}")
+    if not isinstance(cfg.deploy_record_viewers, bool):
+        raise ConfigError(f"deploy.record_viewers must be true or false, got {cfg.deploy_record_viewers!r}")
     if cfg.storage_backend not in STORAGE_BACKENDS:
         raise ConfigError(f"storage.backend {cfg.storage_backend!r} is not supported "
                           f"(available: {', '.join(STORAGE_BACKENDS)})")
