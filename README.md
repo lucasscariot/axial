@@ -54,8 +54,10 @@ The amber dot marks a tile that took over 3 seconds to load.*
 - **Ready for coding agents:** every project ships with rules, three skills for Codex and
   Claude Code, and free discovery commands with JSON output.
 
-Axial supports BigQuery and local DuckDB files, and runs locally as a single process.
-A hosted mode is planned but not built.
+Axial supports BigQuery and local DuckDB files, and runs as a single process. It runs
+locally by default; `axial serve` and the project's `Dockerfile` run it as a container, for
+example on Cloud Run behind Identity-Aware Proxy (see [Deploy to Cloud Run](#deploy-to-cloud-run)).
+There is no managed hosted mode.
 
 ## Quickstart
 
@@ -153,6 +155,7 @@ The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar
 | --- | --- |
 | Launch the project | `axial up` |
 | Launch without BigQuery | `axial up --fixture` |
+| Serve in a container (`0.0.0.0`, `$PORT`, no browser) | `axial serve` |
 | Validate queries and dashboards | `axial check` |
 | See what a query would scan (free) | `axial dry-run <query>` |
 | Find tables and columns (free) | `axial tables`, `axial schema <table>` |
@@ -161,7 +164,7 @@ The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar
 | Measure a change, caches bypassed (billed) | `axial bench <query> --start … --end …` |
 | Screenshot a dashboard | `axial preview <dashboard> --fixture --screenshot out.png` |
 | Save a dashboard as a PDF to share | **Export PDF** in the app, or `axial preview <dashboard> --pdf out.pdf` |
-| Read the reference for your version | `axial guide [queries\|dashboards\|config\|cli\|migration]` |
+| Read the reference for your version | `axial guide [queries\|dashboards\|config\|cli\|deploy\|migration]` |
 | Refresh agent files after an upgrade | `axial agents sync` |
 
 `--start` is inclusive and `--end` is exclusive. Most commands accept `--json`.
@@ -241,6 +244,24 @@ Skills stay short and read `axial guide` for reference, so the instructions alwa
 installed engine. Generated files carry an `axial:managed` marker, and `axial agents sync`
 refreshes them after an upgrade. `axial up` tells you when they're stale.
 
+## Deploy to Cloud Run
+
+Every project `axial init` creates has a `Dockerfile` and `.dockerignore`. The image
+installs the project's axial release, copies the project (without `.axial/` history, local
+DuckDB files or credentials), runs as a non-root user and starts `axial serve`.
+
+```sh
+docker build --build-arg APP_REVISION=$(git rev-parse --short=12 HEAD) -t my-dashboards .
+gcloud run deploy my-dashboards --image … --service-account … \
+  --no-allow-unauthenticated --max-instances=1
+```
+
+**Never deploy it publicly.** Axial has no login. Anyone who can reach it can run billed
+queries as the service account, so put it behind Identity-Aware Proxy or Cloud Run IAM.
+Every viewer reads data with the service account's permissions. History is kept on the
+container's in-memory filesystem and is lost when the instance stops. `GET /api/health` is
+a probe endpoint. `axial guide deploy` covers roles, IAP, configuration and limitations.
+
 ## Migrating from bqdash
 
 Run `axial guide migration` for the full steps. Rename `bqdash.yaml` to `axial.yaml`,
@@ -266,7 +287,7 @@ AXIAL_BIGQUERY_BILLING_PROJECT=other-project AXIAL_SERVER_PORT=9000 axial up
 | `billing` | `mode` (`on_demand` \| `reservation`), `price_per_tib_usd` |
 | `execution` | `default_cache_ttl_seconds`, `max_concurrent_jobs`, `row_cap` |
 | `display` | `title`, `locale`, `currency`, `brand_color`, `logo`, `slow_tile_ms` |
-| `server` | `port` (the next free port is used if it's taken) |
+| `server` | `port` (`axial up` uses the next free port if it's taken; `axial serve` prefers `$PORT`) |
 | `storage` | `backend` (`sqlite` \| `postgres`), `path` (SQLite), `url` and `pool_size` (PostgreSQL) |
 
 To chart a local DuckDB file instead of BigQuery, create the project with

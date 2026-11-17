@@ -23,5 +23,6 @@ checks the query plan instead of estimating bytes.
 | `axial run <query> [--start --end] [--param K=V] [--json]` | run once, print rows (uses the app cache rules) |
 | `axial bench <query> [--start --end] [--runs N] [--json]` | run with both caches bypassed and record it |
 | `axial up` | launch the app; every dashboard load can run jobs |
+| `axial serve [--fixture] [--host --port]` | serve for a container: `0.0.0.0`, `$PORT`, no browser (`axial guide deploy`) |
 
 `--start` is inclusive and `--end` is exclusive (YYYY-MM-DD). They default to the last 7 days.

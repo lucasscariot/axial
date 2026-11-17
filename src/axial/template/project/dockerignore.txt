@@ -1,0 +1,15 @@
+# Kept out of the image: history, Git metadata, local data and credentials.
+.axial/
+.git/
+.venv/
+__pycache__/
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite3
+.env
+*.env
+*credentials*.json
+*service-account*.json
+*.pem
+*.key

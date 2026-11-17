@@ -356,3 +356,27 @@ def test_shared_jobs_and_failures_are_attributed_to_each_waiting_user(cfg, store
         asyncio.run(ex.run(q, v, bypass_cache=True, user_email="d@x.io"))
     row = store.get_request(failed.value.request_id)
     assert row["outcome"] == "error" and row["user_email"] == "d@x.io"
+
+
+def test_health_touches_neither_warehouse_nor_store(cfg, wh, store):
+    with TestClient(create_app(cfg, mode="live", warehouse=wh, store=store)) as c:
+        assert c.get("/api/health").json() == {"status": "ok"}
+    assert wh.submitted == [] and store.requests_between(0, 2**40) == []
+    with TestClient(create_app(cfg, mode="fixture")) as c:
+        assert c.get("/api/health").json() == {"status": "ok"}
+
+
+def test_app_revision_comes_from_the_environment(cfg, wh, store, monkeypatch):
+    from axial.config import load_config
+    from axial.executor import git_revision
+
+    monkeypatch.setenv("AXIAL_APP_REVISION", "abc123def456")
+    assert git_revision(cfg.root) == "abc123def456"
+    # not a config section: AXIAL_<SECTION>_<KEY> parsing leaves it alone
+    assert load_config(cfg.root, environ={"AXIAL_APP_REVISION": "x"}) == load_config(cfg.root, environ={})
+    with TestClient(create_app(cfg, mode="live", warehouse=wh, store=store)) as c:
+        load_dashboard(c)
+        job_id = c.get("/api/usage/bookings_daily").json()["runs"][0]["job_id"]
+        assert c.app.state.executor.store.get_job(job_id)["app_revision"] == "abc123def456"
+    monkeypatch.setenv("AXIAL_APP_REVISION", "")
+    assert git_revision(cfg.root) is None  # the test project copy is not a git checkout

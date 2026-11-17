@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import time
 import uuid
@@ -20,6 +21,8 @@ log = logging.getLogger("axial")
 
 SUBMIT_ATTEMPTS = 3
 NOT_FOUND_GRACE_S = 600
+# "app" is not a config section, so apply_env leaves this variable alone
+REVISION_ENV = "AXIAL_APP_REVISION"
 
 
 class QueryTimeout(Exception):
@@ -58,6 +61,10 @@ class Served:
 
 
 def git_revision(root: Path) -> str | None:
+    """The project commit stamped on each job. AXIAL_APP_REVISION wins, for images built without .git."""
+    env = os.environ.get(REVISION_ENV, "").strip()
+    if env:
+        return env
     try:
         sha = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=root, capture_output=True,
                              text=True, timeout=5).stdout.strip()
