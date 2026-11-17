@@ -1,4 +1,4 @@
-"""FastAPI app: serves the React build and the query API on 127.0.0.1."""
+"""FastAPI app: serves the React build and the query API."""
 
 from __future__ import annotations
 
@@ -99,6 +99,11 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
         return d
 
     # --- metadata ---------------------------------------------------------
+
+    @app.get("/api/health", include_in_schema=False)
+    def health():
+        # for startup and liveness probes: touches neither the warehouse nor the store
+        return {"status": "ok"}
 
     @app.get("/api/meta")
     def meta():

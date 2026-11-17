@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import socket
 import sys
@@ -21,6 +22,8 @@ from .registry import DateRange, ParamError, Registry, normalize_params, resolve
 TEMPLATE_DIR = Path(__file__).parent / "template" / "project"
 GUIDE_DIR = Path(__file__).parent / "guide"
 PORT_SEARCH = 20
+# the template stores its dotfiles under plain names; init writes them back under their real ones
+TEMPLATE_RENAMES = {"gitignore.txt": ".gitignore", "dockerignore.txt": ".dockerignore"}
 
 
 class Group(click.Group):
@@ -130,14 +133,14 @@ def _free_port(preferred: int) -> int:
     raise click.ClickException(f"no free port in {preferred}-{preferred + PORT_SEARCH - 1}; pass --port")
 
 
-def _server(cfg: Config, fixture: bool, port: int):
+def _server(cfg: Config, fixture: bool, port: int, host: str = "127.0.0.1", log_level: str = "warning"):
     import uvicorn
 
     from .app import create_app
 
     warehouse = None if fixture else _warehouse(cfg)
     app = create_app(cfg, mode="fixture" if fixture else "live", warehouse=warehouse)
-    return uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    return uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level=log_level))
 
 
 def _start_in_thread(server) -> threading.Thread:
@@ -187,7 +190,8 @@ def init(directory: Path, billing_project, location, duckdb_path):
     """Create a dashboard project in DIRECTORY."""
     directory = directory.resolve()
     files = [p for p in TEMPLATE_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
-    targets = {p: directory / str(p.relative_to(TEMPLATE_DIR)).replace("gitignore.txt", ".gitignore") for p in files}
+    targets = {p: directory / p.relative_to(TEMPLATE_DIR).with_name(TEMPLATE_RENAMES.get(p.name, p.name))
+               for p in files}
     clashes = [t for t in targets.values() if t.exists()]
     if clashes:
         raise click.ClickException("refusing to overwrite: " + ", ".join(str(c.relative_to(directory)) for c in clashes))
@@ -201,6 +205,8 @@ def init(directory: Path, billing_project, location, duckdb_path):
             if duckdb_path:
                 text = _duckdb_config(text, duckdb_path)
             dst.write_text(text)
+        elif src.name == "Dockerfile":
+            dst.write_text(src.read_text().replace("__AXIAL_REF__", f"v{engine_version()}"))
         else:
             shutil.copyfile(src, dst)
     for d in ("queries", "dashboards"):
@@ -257,6 +263,29 @@ def up(fixture, port, no_open):
                 webbrowser.open(url)
 
         threading.Thread(target=open_when_ready, daemon=True).start()
+    server.run()
+
+
+@main.command()
+@click.option("--fixture", is_flag=True, help="serve representative data instead of querying BigQuery")
+@click.option("--host", default="0.0.0.0", show_default=True, help="interface to bind")
+@click.option("--port", type=int, help="port to use (default: $PORT, else server.port)")
+def serve(fixture, host, port):
+    """Check the project and serve its dashboards for a container or hosted deployment."""
+    cfg, reg = _project()
+    errors = _print_issues(run_checks(reg))
+    if errors:
+        raise click.ClickException(f"{errors} error(s) in dashboards or queries; fix them or run `axial check`")
+    # Cloud Run and most container platforms pass the port to listen on in $PORT
+    env_port = os.environ.get("PORT")
+    if port is None and env_port:
+        try:
+            port = int(env_port)
+        except ValueError:
+            raise click.ClickException(f"PORT={env_port!r} is not a number") from None
+    server = _server(cfg, fixture, port or cfg.port, host=host, log_level="info")
+    click.echo(f"axial {engine_version()} · {cfg.root.name} · {'fixture data' if fixture else _target(cfg)}")
+    click.echo(f"serving on {host}:{server.config.port}")
     server.run()
 
 
@@ -578,7 +607,7 @@ def usage(query_id, days, as_json):
 @main.command()
 @click.argument("topic", required=False)
 def guide(topic):
-    """Print the reference: queries, dashboards, config, cli, migration."""
+    """Print the reference: queries, dashboards, config, cli, deploy, migration."""
     topics = sorted(p.stem for p in GUIDE_DIR.glob("*.md"))
     if topic is None:
         click.echo(f"axial {engine_version()} reference. Topics: {', '.join(topics)}\n"

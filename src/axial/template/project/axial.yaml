@@ -28,7 +28,7 @@ display:
   slow_tile_ms: 3000
 
 server:
-  port: 8765                   # axial up uses the next free port if this one is taken
+  port: 8765                   # axial up uses the next free port if taken; axial serve prefers $PORT
 
 storage:
   backend: sqlite              # sqlite | postgres (see `axial guide config`)
