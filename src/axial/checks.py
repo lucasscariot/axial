@@ -5,12 +5,16 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from .config import Config
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
+from .config import Config, engine_version
 from .registry import (COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
                        PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, TILE_KEYS, TILE_TYPES, Dashboard, Query,
                        Registry)
@@ -282,6 +286,32 @@ def check_layout(cfg: Config) -> list[Issue]:
     return out
 
 
+ENGINE_PIN = re.compile(r"^ARG AXIAL_REF=(\S+)", re.M)
+
+
+def check_engine_pin(cfg: Config) -> list[Issue]:
+    """The Dockerfile's AXIAL_REF is the project's engine pin; it must satisfy `engine:`."""
+    path = cfg.root / "Dockerfile"
+    if not cfg.engine or not path.exists():
+        return []
+    found = ENGINE_PIN.search(path.read_text())
+    if not found:
+        return []
+    ref = found.group(1)
+    try:
+        release = Version(ref.removeprefix("v"))
+    except InvalidVersion:
+        return [Issue("warning", "Dockerfile", f"AXIAL_REF={ref} is not a release tag, so it cannot be checked "
+                      f"against engine {cfg.engine!r}; pin a release such as v{engine_version()}")]
+    try:
+        if release in SpecifierSet(cfg.engine):
+            return []
+    except InvalidSpecifier:
+        return []  # load_config reports it
+    return [Issue("error", "Dockerfile", f"AXIAL_REF={ref} is outside engine {cfg.engine!r} in axial.yaml; "
+                  "change one so the image and local runs use compatible engines")]
+
+
 def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
     issues: list[Issue] = [Issue("error", str(e.path.relative_to(reg.cfg.root)), e.message) for e in reg.errors]
     if dashboard_id is not None:
@@ -295,6 +325,7 @@ def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
         dashboards = list(reg.dashboards.values())
         query_ids = list(reg.queries)
         issues += check_layout(reg.cfg)
+        issues += check_engine_pin(reg.cfg)
     for q_id in query_ids:
         issues += check_query(reg.queries[q_id])
         issues += check_fixture(reg.queries[q_id], reg.cfg)

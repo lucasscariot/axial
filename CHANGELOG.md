@@ -31,6 +31,20 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 - `server.trust_iap_user: true` records the signed-in user that Identity-Aware Proxy reports
   on each dataset request, and shows it in Inspect and Query usage. Off by default and
   always off in `axial up`. It stores viewers' emails in history; see `axial guide config`.
+- `axial deploy` publishes a project on Cloud Run behind IAP, described by a new optional
+  `deploy:` section in `axial.yaml` (`service`, `region`, `project`, `viewers`,
+  `record_viewers`). `--dry-run` prints the gcloud commands and changes nothing. The config
+  format stays at version **2**: existing projects need no changes, and a project that adds
+  `deploy:` should require this engine in its `engine:` range, because earlier releases
+  ignore the section and have no `axial deploy`.
+- `axial init` now writes an allowlist `.dockerignore`, so the image and the upload to Cloud
+  Build hold only `axial.yaml`, `dashboards/` and `queries/`, and
+  `.github/workflows/check.yml`, which builds the image and uses it to run `axial check`,
+  `axial agents sync --check` and a fixture-mode `axial serve` probe on every pull request,
+  with no Google credentials.
+- `axial check` treats the Dockerfile's `AXIAL_REF` as the project's engine pin: a release
+  pinned there that falls outside `engine:` in `axial.yaml` is an error, and a ref that is
+  not a release tag is a warning.
 
 **History schema 2:** request history gains a `user_email` column. The engine adds it to
 SQLite and PostgreSQL history when it opens them; older rows have no user. After that,
@@ -51,6 +65,14 @@ and unset any `AXIAL_<SECTION>_<KEY>` variable that names no setting. Rename `.y
 correct fixtures whose columns or types differ from the query's `columns`. If
 `axial agents sync --check` fails on a hand-written file, run `axial agents sync --force` to
 replace it, or move its content to `CONTEXT.md` first.
+
+**Upgrade notes for hosting:** nothing is required. `axial init` does not rewrite an existing
+project, so to adopt the new files, run `axial init` in an empty directory and copy its
+`Dockerfile`, `.dockerignore` and `.github/workflows/check.yml`, keeping your own
+`AXIAL_REF`. The allowlist leaves out everything it does not name: add a `!` line for each
+extra runtime file, such as a logo or a DuckDB file. If `axial check` then reports
+`AXIAL_REF` outside `engine:`, change one of the two so they agree. Add `deploy:` to
+`axial.yaml` only if you use `axial deploy`.
 
 ## [0.2.0](https://github.com/lucasscariot/axial/compare/v0.1.2...v0.2.0) (2026-11-17)
 

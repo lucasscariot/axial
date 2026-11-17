@@ -14,7 +14,10 @@ execution: {default_cache_ttl_seconds: 120, max_concurrent_jobs: 4, row_cap: 200
 display: {title: null, locale: en-US, currency: USD, brand_color: null, logo: null, slow_tile_ms: 3000}
 server: {port: 8765, trust_iap_user: false}
 storage: {backend: sqlite, path: .axial/history.sqlite3}   # or backend: postgres (below)
+deploy: {service: null, region: null, project: null, viewers: [], record_viewers: false}
 ```
+
+`deploy` is read by `axial deploy` only; see `axial guide deploy`.
 
 These are all the keys. A key Axial does not know, in the file or from an `AXIAL_<SECTION>_<KEY>`
 variable, is an error rather than being ignored, so a typo cannot silently leave a default

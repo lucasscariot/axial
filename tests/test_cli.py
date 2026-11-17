@@ -35,13 +35,22 @@ def test_init_creates_a_project_that_checks_clean(tmp_path, monkeypatch):
     r = CliRunner().invoke(main, ["init", str(target), "--billing-project", "acme-bi", "--location", "EU"])
     assert r.exit_code == 0, r.output
     for f in ("axial.yaml", ".gitignore", "AGENTS.md", "queries/orders_daily.sql", "dashboards/overview.yaml",
-              "Dockerfile", ".dockerignore"):
+              "Dockerfile", ".dockerignore", ".github/workflows/check.yml"):
         assert (target / f).exists(), f
+    assert not (target / "github").exists()
     dockerfile = (target / "Dockerfile").read_text()
     assert f"ARG AXIAL_REF=v{engine_version()}\n" in dockerfile and "__" not in dockerfile
     assert 'CMD ["axial", "serve"]' in dockerfile and "USER axial" in dockerfile
-    ignored = (target / ".dockerignore").read_text().split()
-    assert {".axial/", ".git/", "*.duckdb", ".env"} <= set(ignored)
+    # an allowlist: everything is ignored except what `axial serve` reads
+    patterns = [line for line in (target / ".dockerignore").read_text().splitlines()
+                if line and not line.startswith("#")]
+    assert patterns[0] == "*" and all(p.startswith("!") for p in patterns[1:])
+    assert {"!Dockerfile", "!axial.yaml", "!dashboards/*.yaml", "!queries/*.sql", "!queries/*.yaml"} <= set(patterns)
+    assert "COPY . /app" in dockerfile
+    workflow = yaml.safe_load((target / ".github/workflows/check.yml").read_text())
+    steps = " ".join(s.get("run", "") for s in workflow["jobs"]["check"]["steps"])
+    for command in ("docker build", "axial check", "axial agents sync --check", "axial serve --fixture", "/api/health"):
+        assert command in steps, command
     raw = yaml.safe_load((target / "axial.yaml").read_text())
     assert raw["bigquery"] == {**raw["bigquery"], "billing_project": "acme-bi", "location": "EU"}
     cfg = load_config(target, environ={})

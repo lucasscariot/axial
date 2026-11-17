@@ -33,3 +33,10 @@ server:
 storage:
   backend: sqlite              # sqlite | postgres (see `axial guide config`)
   path: .axial/history.sqlite3
+
+deploy:                        # used by `axial deploy` (see `axial guide deploy`)
+  service: null                # Cloud Run service; also names its image repository and service account
+  region: null                 # e.g. europe-west2
+  project: null                # GCP project to deploy into; defaults to bigquery.billing_project
+  viewers: []                  # who may open it through IAP, e.g. [user:jane@example.com, group:ops@example.com]
+  record_viewers: false        # true records each viewer's email in history (server.trust_iap_user)

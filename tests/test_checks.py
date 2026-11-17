@@ -117,3 +117,22 @@ def test_files_the_engine_would_ignore_are_errors(repo):
     ]
     # a single-dashboard check stays about that dashboard
     assert errors(repo, "booking_ops") == []
+
+
+def test_dockerfile_engine_pin_must_satisfy_the_engine_range(repo):
+    cfg_path, dockerfile = repo / "axial.yaml", repo / "Dockerfile"
+    cfg_path.write_text('engine: ">=0.1,<99"\n' + cfg_path.read_text())
+
+    def issues():
+        return [(i.level, i.message) for i in run_checks(Registry(load_config(repo, environ={})))]
+
+    dockerfile.write_text("FROM python:3.13-slim\nARG AXIAL_REF=v0.2.0\n")
+    assert issues() == []
+    dockerfile.write_text("ARG AXIAL_REF=v99.1.0\n")
+    assert issues() == [("error", "AXIAL_REF=v99.1.0 is outside engine '>=0.1,<99' in axial.yaml; "
+                         "change one so the image and local runs use compatible engines")]
+    dockerfile.write_text("ARG AXIAL_REF=d7e231cb1bbacf4257c22549bd20757dd42e3e64\n")
+    (level, message), = issues()
+    assert level == "warning" and "is not a release tag" in message
+    dockerfile.write_text("FROM scratch\n")
+    assert issues() == []
