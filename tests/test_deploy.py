@@ -95,7 +95,11 @@ def test_deploy_grants_job_access_on_the_billing_project(project):
     assert binding[:4] == ["gcloud", "projects", "add-iam-policy-binding", "test-project"]
     assert f"--member=serviceAccount:{sa}" in binding and "--role=roles/bigquery.jobUser" in binding
     assert f"--service-account={sa}" in gcloud.ran("run", "deploy")[0]
-    assert all("--project=hosting-project" in c for c in gcloud.commands if c[0] == "gcloud")
+    # only that grant is scoped to the billing project; everything else is in the hosting project
+    assert "--project=test-project" in binding and "--project=hosting-project" not in binding
+    others = [c for c in gcloud.commands if c[0] == "gcloud" and c is not binding]
+    assert others and all("--project=hosting-project" in c and "--project=test-project" not in c for c in others)
+    assert gcloud.ran("projects", "describe")[0][3] == "hosting-project"
 
 
 def test_deploy_reuses_what_exists_and_can_skip_the_build(project):

@@ -100,8 +100,8 @@ def deploy(cfg: Config, *, account: str | None = None, skip_build: bool = False,
             return ""
         return runner(command, cfg.root, capture)
 
-    def gcloud(*args: str, capture: bool = False, change: bool = True) -> str:
-        scope = [f"--project={t.project}", *([f"--account={account}"] if account else []), "--quiet"]
+    def gcloud(*args: str, capture: bool = False, change: bool = True, project: str | None = None) -> str:
+        scope = [f"--project={project or t.project}", *([f"--account={account}"] if account else []), "--quiet"]
         return sh(["gcloud", *args, *scope], capture=capture, change=change)
 
     def listed(*args: str) -> list[dict]:
@@ -130,7 +130,8 @@ def deploy(cfg: Config, *, account: str | None = None, skip_build: bool = False,
             gcloud("iam", "service-accounts", "create", t.service, f"--display-name={t.service} dashboards runtime")
         # jobs are submitted in the billing project, which deploy.project may not be
         gcloud("projects", "add-iam-policy-binding", t.billing_project,
-               f"--member=serviceAccount:{t.service_account}", "--role=roles/bigquery.jobUser", "--condition=None", "--format=none")
+               f"--member=serviceAccount:{t.service_account}", "--role=roles/bigquery.jobUser",
+               "--condition=None", "--format=none", project=t.billing_project)
         click.echo(f"+ grant {t.service_account} READER on {', '.join(t.datasets)}")
         if not dry_run:
             grant(t, gcloud("auth", "print-access-token", capture=True, change=False))
