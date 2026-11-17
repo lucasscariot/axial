@@ -86,6 +86,13 @@ extra runtime file, such as a logo or a DuckDB file. If `axial check` then repor
 `AXIAL_REF` outside `engine:`, change one of the two so they agree. Add `deploy:` to
 `axial.yaml` only if you use `axial deploy`.
 
+## [0.3.1](https://github.com/lucasscariot/axial/compare/v0.3.0...v0.3.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **homebrew:** drop the version line when the formula pins a release tag ([#26](https://github.com/lucasscariot/axial/issues/26)) ([58c133d](https://github.com/lucasscariot/axial/commit/58c133da2e6abc1c7b51b730f3f88ba5d1b89f3f))
+
 ## [0.3.0](https://github.com/lucasscariot/axial/compare/v0.2.0...v0.3.0) (2026-11-17)
 
 
