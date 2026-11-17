@@ -45,9 +45,13 @@ def update_formula(ref: str, path: Path = FORMULA) -> None:
         source.getmember(f"{root}/src/axial/web_dist/index.html")
 
     formula = path.read_text()
+    # Homebrew reads the version from a tag URL and rejects a `version` line that repeats it
+    # (`brew audit`: "redundant with version scanned from URL"). A commit URL carries none.
+    formula, count = re.subn(r'^  version "[^"]*"\n', "", formula, flags=re.M)
+    if count > 1:
+        raise ValueError("expected at most one version in the formula")
     replacements = {
-        "url": url,
-        "version": version,
+        "url": url if tag else f'{url}"\n  version "{version}',
         "sha256": hashlib.sha256(archive).hexdigest(),
     }
     for field, value in replacements.items():

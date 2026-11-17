@@ -45,7 +45,8 @@ def test_update_uses_archive_checksum_and_matching_release(formula, monkeypatch)
     brew.update_formula("v0.2.0", formula)
     assert requests == ["https://github.com/lucasscariot/axial/archive/refs/tags/v0.2.0.tar.gz"]
     text = formula.read_text()
-    assert 'version "0.2.0"' in text
+    # brew audit rejects a version line that repeats the one in a tag URL
+    assert "  version " not in text
     assert f'sha256 "{brew.hashlib.sha256(data).hexdigest()}"' in text
     assert '--frozen' in text and '"--extra", "duckdb"' in text
 
@@ -54,8 +55,14 @@ def test_initial_commit_is_immutable_and_uses_package_version(formula, monkeypat
     ref = "a" * 40
     monkeypatch.setattr(brew, "urlopen", lambda *a, **kw: io.BytesIO(archive(ref=ref)))
     brew.update_formula(ref, formula)
-    assert f'/archive/{ref}.tar.gz"' in formula.read_text()
-    assert 'version "0.2.0"' in formula.read_text()
+    assert f'/archive/{ref}.tar.gz"\n  version "0.2.0"\n  sha256 "' in formula.read_text()
+    # moving on to a release drops the version line again, and going back restores exactly one
+    monkeypatch.setattr(brew, "urlopen", lambda *a, **kw: io.BytesIO(archive()))
+    brew.update_formula("v0.2.0", formula)
+    assert "  version " not in formula.read_text()
+    monkeypatch.setattr(brew, "urlopen", lambda *a, **kw: io.BytesIO(archive(ref=ref)))
+    brew.update_formula(ref, formula)
+    assert formula.read_text().count('  version "0.2.0"\n') == 1
 
 
 @pytest.mark.parametrize("metadata", [
