@@ -101,6 +101,35 @@ export function UsagePage({ meta }: { meta: Meta | null }) {
           </div>
         </div>
       )}
+      {d?.users?.length > 0 && (
+        <section className="card flush">
+          <header className="card-head"><h2>Users</h2><p>Signed-in users recorded by Identity-Aware Proxy. Jobs count for the user whose request started them.</p></header>
+          <div className="table-wrap">
+            <table className="dense">
+              <thead>
+                <tr>
+                  <th>User</th><th className="num">Requests</th><th className="num">Queries</th><th className="num">Jobs</th>
+                  {local ? null : onDemand ? <><th className="num">Bytes billed</th><th className="num">Est. cost</th></> : <th className="num">Slot-hours</th>}
+                  <th className="num">Failed</th><th>Last request</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.users.map((u: any) => (
+                  <tr key={u.user_email}>
+                    <td>{u.user_email}</td>
+                    <td className="num">{u.requests}</td>
+                    <td className="num">{u.queries}</td>
+                    <td className="num">{u.jobs}</td>
+                    {local ? null : onDemand ? <><td className="num">{bytes(u.bytes_billed)}</td><td className="num">{usd(u.est_cost_usd)}</td></> : <td className="num">{u.slot_hours.toFixed(3)}</td>}
+                    <td className={`num ${u.errors ? "bad" : ""}`}>{u.errors || ""}</td>
+                    <td>{new Date(u.last_requested_at * 1000).toLocaleString(getDisplay().locale)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -116,6 +145,7 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
   useEffect(() => { if (meta?.mode === "live") api.usageQuery(queryId, range.start, range.end).then(setD, (e) => setErr(e.message)); }, [range, meta, queryId]);
   const onDemand = getDisplay().billing_mode === "on_demand";
   const local = getDisplay().billing_mode === "local";
+  const users = d?.runs.some((r: any) => r.user_email);
   return (
     <main className="page">
       <RangeBar range={range} setRange={setRange}
@@ -153,11 +183,12 @@ export function UsageQueryPage({ queryId, meta }: { queryId: string; meta: Meta 
             <header className="card-head"><h2>Runs</h2><p>{d.runs.length} requests · {d.totals.jobs} jobs{local ? "" : onDemand ? ` · ${bytes(d.totals.bytes_billed)} billed · ${usd(d.totals.est_cost_usd)}` : ` · ${d.totals.slot_hours.toFixed(3)} slot-h`}</p></header>
             <div className="table-wrap">
               <table className="dense">
-                <thead><tr><th>When</th><th>Dashboard</th><th>Filters</th><th>Served by</th><th>Outcome</th><th className="num">App time</th><th className="num">Queue</th><th className="num">Exec</th><th className="num">Billed</th><th className="num">Slot-ms</th><th>BQ cache</th><th>SQL</th><th>Job</th></tr></thead>
+                <thead><tr><th>When</th>{users && <th>User</th>}<th>Dashboard</th><th>Filters</th><th>Served by</th><th>Outcome</th><th className="num">App time</th><th className="num">Queue</th><th className="num">Exec</th><th className="num">Billed</th><th className="num">Slot-ms</th><th>BQ cache</th><th>SQL</th><th>Job</th></tr></thead>
                 <tbody>
                   {d.runs.map((r: any) => (
                     <tr key={r.id} className="clickable" onClick={() => setInspect(r.id)}>
                       <td>{new Date(r.requested_at * 1000).toLocaleString(getDisplay().locale)}</td>
+                      {users && <td>{r.user_email ?? <span className="muted">–</span>}</td>}
                       <td>{r.dashboard_id ?? <span className="muted">cli</span>}</td>
                       <td className="small">{Object.entries(JSON.parse(r.params_json)).map(([k, x]) => `${k}=${x}`).join(" ")}</td>
                       <td>{SOURCE_LABEL[r.source] ?? r.source}{r.bypass_cache ? " · bypass" : ""}</td>

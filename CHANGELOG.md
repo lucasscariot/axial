@@ -19,13 +19,19 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
   DuckDB support. Release automation opens formula update PRs with verified checksums.
 - `storage.backend: postgres` keeps execution history in PostgreSQL (including Cloud SQL),
   so hosted instances share it and keep it across restarts. Install `axial[postgres]` and
-  pass the connection string in `AXIAL_STORAGE_URL`. Existing projects need no changes and
-  their SQLite history format is unchanged.
+  pass the connection string in `AXIAL_STORAGE_URL`. Existing projects need no changes.
+- `server.trust_iap_user: true` records the signed-in user that Identity-Aware Proxy reports
+  on each dataset request, and shows it in Inspect and Query usage. Off by default and
+  always off in `axial up`. It stores viewers' emails in history; see `axial guide config`.
+
+**History schema 2:** request history gains a `user_email` column. The engine adds it to
+SQLite and PostgreSQL history when it opens them; older rows have no user. After that,
+older engines refuse the history database, so upgrade every instance that shares it.
 
 **Upgrade notes:** run `axial guide migration`. Stop the old engine, rename
 `bqdash.yaml` to `axial.yaml`, set `version: 2`, move `.bqdash/` to `.axial/` and update
 `storage.path`, ignore rules, environment variables and scripts. Keep custom history
-paths. The SQLite schema is unchanged. `axial agents sync` upgrades old managed markers
+paths. The rename leaves history as it is. `axial agents sync` upgrades old managed markers
 without `--force`, preserving handwritten files and `CONTEXT.md`. Release tags through
 `v0.1.2` retain the old package name; the initial Homebrew formula pins the rename commit.
 

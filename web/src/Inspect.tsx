@@ -54,6 +54,7 @@ export function InspectDrawer({ target, onClose }: { target: InspectTarget; onCl
             <h3>Request</h3>
             <dl className="kv">
               <Row k="When">{when(req.requested_at)}</Row>
+              {req.user_email && <Row k="User">{req.user_email}</Row>}
               <Row k="Filters">{Object.entries(req.params).map(([k, v]) => <div key={k} className="mono">{k} = {String(v)}</div>)}</Row>
               <Row k="Served by">{req.source === "bigquery" ? `new ${engineName()} job` : req.source === "shared" ? "shared in-flight job" : req.source === "app_cache" ? "app cache" : req.source}{req.bypass_cache ? " (caches bypassed)" : ""}</Row>
               <Row k="Outcome"><span className={`badge ${req.outcome === "ok" ? "green" : "red"}`}>{req.outcome}</span>{req.error ? ` ${req.error}` : ""}</Row>

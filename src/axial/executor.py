@@ -94,7 +94,9 @@ class Executor:
     # --- public -----------------------------------------------------------
 
     async def run(self, query: Query, values: dict[str, Any], *, dashboard_id: str | None = None,
-                  bypass_cache: bool = False) -> Served:
+                  bypass_cache: bool = False, user_email: str | None = None) -> Served:
+        """Serve one dataset request. `user_email` is recorded on this request's row only: it is
+        never sent to the warehouse, so a cached or shared result stays shared."""
         t0 = time.perf_counter()
         params_json = normalize_params(values)
         key = (query.id, query.sql_hash, params_json)
@@ -107,6 +109,7 @@ class Executor:
                 source=source, job_id=result.job_id if result else job_id, bypass_cache=bypass_cache,
                 outcome=outcome, error=error, app_ms=app_ms,
                 row_count=len(result.rows) if result else None, truncated=result.truncated if result else False,
+                user_email=user_email,
             )
             return rid, app_ms
 

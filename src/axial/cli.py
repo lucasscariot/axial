@@ -233,6 +233,11 @@ def up(fixture, port, no_open):
     errors = _print_issues(run_checks(reg))
     if errors:
         raise click.ClickException(f"{errors} error(s) in dashboards or queries; fix them or run `axial check`")
+    if cfg.trust_iap_user:
+        # Nothing sits in front of 127.0.0.1, so any local client could claim to be anyone.
+        click.secho("server.trust_iap_user is ignored by axial up: requests are not recorded per user",
+                    fg="yellow", err=True)
+        cfg.trust_iap_user = False
     server = _server(cfg, fixture, port or _free_port(cfg.port))
     port = server.config.port
     url = f"http://127.0.0.1:{port}/"

@@ -76,3 +76,10 @@ def test_axial_config_uses_new_defaults_and_rejects_old_schema(repo):
     config.write_text("version: 1\n")
     with pytest.raises(ConfigError, match="axial guide migration"):
         load_config(repo, environ={})
+
+
+def test_iap_user_attribution_is_opt_in(repo):
+    assert load_config(repo, environ={}).trust_iap_user is False
+    assert load_config(repo, environ={"AXIAL_SERVER_TRUST_IAP_USER": "true"}).trust_iap_user is True
+    with pytest.raises(ConfigError, match="trust_iap_user must be true or false"):
+        load_config(repo, environ={"AXIAL_SERVER_TRUST_IAP_USER": "yes please"})
