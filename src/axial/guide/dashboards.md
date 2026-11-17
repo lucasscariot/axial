@@ -31,6 +31,12 @@ tiles:
 Every tile also takes `span` (1–12, default 12), `title`, and `height` (px; defaults are
 kpi 64, charts 200, funnel 260, table 330).
 
+`axial check` rejects any other key, on the dashboard, in `date_range` or on a tile (for
+example `reduce` on a `line` tile, or a misspelt `height`).
+
+Dashboards are the `.yaml` files directly inside `dashboards/`. A `.yml` file or a file in a
+subfolder is not loaded, and `axial check` reports it.
+
 ## Layout guidance
 
 - Put the headline KPIs on the first row, 3–4 per row (`span: 3` or `4`).

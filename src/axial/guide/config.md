@@ -16,6 +16,10 @@ server: {port: 8765, trust_iap_user: false}
 storage: {backend: sqlite, path: .axial/history.sqlite3}   # or backend: postgres (below)
 ```
 
+These are all the keys. A key Axial does not know, in the file or from an `AXIAL_<SECTION>_<KEY>`
+variable, is an error rather than being ignored, so a typo cannot silently leave a default
+in place.
+
 ## Local DuckDB
 
 Point a project at a DuckDB file instead of BigQuery. The `bigquery` and `billing`

@@ -4,7 +4,7 @@
 
 | command | |
 |---|---|
-| `axial check [dashboard] [--json]` | validate queries and dashboards |
+| `axial check [dashboard] [--json]` | validate config keys, queries, dashboards and fixtures |
 | `axial preview <dashboard> --fixture --screenshot out.png` | render with representative data |
 | `axial preview <dashboard> --fixture --pdf out.pdf` | A4 landscape PDF, as the app's Export PDF prints it |
 | `axial dry-run <query> [--start --end] [--json]` | byte estimate, est. cost, tables read |
@@ -12,7 +12,7 @@
 | `axial schema <project.dataset.table> [--json]` | columns, partitioning, clustering |
 | `axial usage [query] [--days N] [--json]` | recorded requests, jobs, cost, SQL versions |
 | `axial guide [topic]` | this reference, matching the installed engine |
-| `axial agents sync [--check]` | refresh AGENTS.md, CLAUDE.md and skills |
+| `axial agents sync [--check] [--force]` | refresh AGENTS.md, CLAUDE.md and skills; `--check` fails if one is stale or hand-written |
 
 **Billed:** these run BigQuery jobs. Check `dry-run` first.
 With `warehouse: duckdb` they run against the local file and cost nothing; `dry-run` then

@@ -242,7 +242,9 @@ its numbers against the original.
 
 Skills stay short and read `axial guide` for reference, so the instructions always match the
 installed engine. Generated files carry an `axial:managed` marker, and `axial agents sync`
-refreshes them after an upgrade. `axial up` tells you when they're stale.
+refreshes them after an upgrade. `axial up` tells you when they're stale, and
+`axial agents sync --check` fails in CI when one is stale or has been replaced by a
+hand-written file. Project notes go in `CONTEXT.md`.
 
 ## Deploy to Cloud Run
 
@@ -322,6 +324,8 @@ documents every key.
 | A tile shows **Truncated** | The result passed the row cap; aggregate more in SQL or add `LIMIT @limit` |
 | A tile timed out | The job keeps running; its stats are reconciled later. Check **Query usage** or run `axial reconcile` |
 | `agent files differ from this engine version` | Run `axial agents sync` |
+| `unknown key …` | Fix the spelling. `axial guide config`, `queries` and `dashboards` list every key |
+| `file(s) not managed by axial` | Move project notes to `CONTEXT.md`, then run `axial agents sync --force` |
 | `refusing to overwrite` on `init` | Use an empty or new directory |
 | `screenshots and PDFs need playwright` | Use the uv installation with `uv tool install --force --with-executables-from playwright 'axial[screenshot] @ git+https://github.com/lucasscariot/axial.git@main'`, then `playwright install chromium`. The in-app **Export PDF** button needs neither |
 | Wrong location errors from BigQuery | Set `bigquery.location` to where the data lives (e.g. `EU`, `US`, `europe-west2`) |

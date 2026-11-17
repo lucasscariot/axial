@@ -296,7 +296,7 @@ def serve(fixture, host, port):
 @click.argument("dashboard", required=False)
 @click.option("--json", "as_json", is_flag=True)
 def check(dashboard, as_json):
-    """Validate a dashboard (or everything): query refs, tile fields, filter bindings, SQL."""
+    """Validate a dashboard (or everything): keys, query refs, tile fields, filter bindings, SQL, fixtures."""
     _, reg = _project()
     issues = run_checks(reg, dashboard)
     errors = sum(1 for i in issues if i.level == "error")
@@ -624,7 +624,8 @@ def agents():
 
 
 @agents.command("sync")
-@click.option("--check", "check_only", is_flag=True, help="exit 1 if files are out of date; change nothing")
+@click.option("--check", "check_only", is_flag=True,
+              help="exit 1 if files are out of date or hand-written; change nothing")
 @click.option("--force", is_flag=True, help="also overwrite agent files that are not marked as managed")
 def agents_sync(check_only, force):
     """Write or refresh agent files from the installed engine."""
@@ -633,13 +634,17 @@ def agents_sync(check_only, force):
     cfg = load_config(check_version=False)
     actions = ag.plan(cfg.root, force=force)
     changes = [a for a in actions if a.status in ("create", "update", "remove")]
+    skipped = [a for a in actions if a.status == "skip"]
     for a in actions:
         if a.status != "unchanged":
             note = " (not managed by axial; use --force to replace)" if a.status == "skip" else ""
             click.echo(f"{a.status:<8} {a.path}{note}")
     if check_only:
-        click.echo("up to date" if not changes else f"{len(changes)} file(s) out of date")
-        sys.exit(1 if changes else 0)
+        # A hand-written file in a managed path means agents are not reading the engine's guide.
+        parts = ([f"{len(changes)} file(s) out of date"] if changes else []) + \
+                ([f"{len(skipped)} file(s) not managed by axial"] if skipped else [])
+        click.echo("; ".join(parts) or "up to date")
+        sys.exit(1 if parts else 0)
     ag.apply(cfg.root, changes)
     click.echo(f"{len(changes)} file(s) written" if changes else "up to date")
 

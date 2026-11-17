@@ -19,6 +19,20 @@ NUMERIC_TYPES = {"INT64", "FLOAT64", "NUMERIC", "BIGNUMERIC"}
 FORMATS = {"integer", "number", "money", "percent", "duration", "date", "text"}
 TILE_TYPES = {"kpi", "line", "bar", "funnel", "table", "text"}
 REDUCERS = {"sum", "min", "max", "first", "last", "count", "single"}
+# Every key a query or dashboard file may hold; `axial check` rejects anything else.
+QUERY_KEYS = {"title", "description", "params", "columns", "formats", "labels", "cache_ttl_seconds"}
+PARAM_KEYS = {"type", "default"}
+DASHBOARD_KEYS = {"title", "description", "date_range", "tiles"}
+DATE_RANGE_KEYS = {"default_days", "max_days", "start_param", "end_param"}
+COMMON_TILE_KEYS = {"type", "query", "span", "title", "height"}
+TILE_KEYS = {
+    "kpi": {"value", "reduce", "format"},
+    "line": {"x", "y", "series", "format"},
+    "bar": {"x", "y", "series", "format"},
+    "funnel": {"x", "y", "format"},
+    "table": {"columns", "formats"},
+    "text": {"markdown"},
+}
 
 
 class ParamError(ValueError):
@@ -46,6 +60,7 @@ class Query:
     labels: dict[str, str]
     cache_ttl_seconds: int
     description: str = ""
+    raw: dict = field(default_factory=dict)
 
     @property
     def sql_hash(self) -> str:
@@ -146,6 +161,7 @@ def load_query(yaml_path: Path, cfg: Config) -> Query:
         formats=dict(raw.get("formats") or {}),
         labels={str(k): str(v) for k, v in (raw.get("labels") or {}).items()},
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", cfg.default_cache_ttl_seconds)),
+        raw=raw,
     )
 
 
@@ -156,6 +172,8 @@ def load_dashboard(path: Path) -> Dashboard:
     dr = raw.get("date_range")
     date_range = None
     if dr is not None:
+        if not isinstance(dr, dict):
+            raise LoadError(path, "date_range must be a mapping")
         date_range = DateRange(
             default_days=int(dr.get("default_days", 7)),
             max_days=int(dr.get("max_days", 31)),

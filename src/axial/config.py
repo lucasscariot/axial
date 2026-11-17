@@ -16,6 +16,18 @@ from packaging.version import Version
 CONFIG_FILE = "axial.yaml"
 SCHEMA_VERSION = 2
 SECTIONS = ("bigquery", "duckdb", "billing", "execution", "display", "server", "storage")
+# Every key axial.yaml may hold. Anything else is rejected, so a typo cannot silently fall
+# back to a default.
+TOP_LEVEL_KEYS = {"version", "engine", "warehouse", *SECTIONS}
+SECTION_KEYS = {
+    "bigquery": {"billing_project", "location", "datasets", "maximum_bytes_billed", "wait_timeout_seconds"},
+    "duckdb": {"path", "datasets", "allow_external_access", "threads", "memory_limit"},
+    "billing": {"mode", "price_per_tib_usd"},
+    "execution": {"default_cache_ttl_seconds", "max_concurrent_jobs", "row_cap", "reconcile_interval_seconds"},
+    "display": {"title", "locale", "currency", "brand_color", "logo", "slow_tile_ms"},
+    "server": {"port", "trust_iap_user"},
+    "storage": {"backend", "path", "url", "pool_size"},
+}
 WAREHOUSES = ("bigquery", "duckdb")
 STORAGE_BACKENDS = ("sqlite", "postgres")
 # Used verbatim rather than parsed as YAML: a connection string may hold a password, and a
@@ -168,6 +180,12 @@ def _section(raw: dict, name: str) -> dict:
     v = raw.get(name) or {}
     if not isinstance(v, dict):
         raise ConfigError(f"{CONFIG_FILE}: {name} must be a mapping")
+    for key in v:
+        if key not in SECTION_KEYS[name]:
+            raise ConfigError(
+                f"{CONFIG_FILE}: unknown key {name}.{key} (set in the file or as "
+                f"{ENV_PREFIX}{name.upper()}_{str(key).upper()}). "
+                f"Known {name} keys: {', '.join(sorted(SECTION_KEYS[name]))}")
     return v
 
 
@@ -185,6 +203,9 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
     if schema != SCHEMA_VERSION:
         raise ConfigError(f"{path}: config version {schema} is not supported by axial {engine_version()} "
                           f"(supports version {SCHEMA_VERSION}). Run `axial guide migration` for upgrade notes.")
+    for key in raw:
+        if key not in TOP_LEVEL_KEYS:
+            raise ConfigError(f"{path}: unknown key {key!r}. Known keys: {', '.join(sorted(TOP_LEVEL_KEYS))}")
     raw = apply_env(raw, dict(os.environ) if environ is None else environ)
     if check_version:
         check_engine(raw.get("engine"))
