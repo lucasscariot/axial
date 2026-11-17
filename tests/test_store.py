@@ -62,6 +62,17 @@ def test_backends_return_identical_history(store, cfg):
     reference.close()
 
 
+def test_user_totals_include_a_job_started_before_the_range(store, cfg):
+    fill(store)
+    # axial_q_2 was submitted at 1002.0; the request that started it returned at 1002.5.
+    store.update_job("axial_q_2", status="done", outcome="success", bytes_billed=2**40, slot_ms=1000)
+    assert summarize(store, cfg, 0, 1002.25)["users"] == []
+    (user,) = summarize(store, cfg, 1002.25, 2000)["users"]
+    assert user["user_email"] == "a@example.com" and user["jobs"] == 1 and user["bytes_billed"] == 2**40
+    (both,) = summarize(store, cfg, 0, 2000)["users"]
+    assert both["jobs"] == 1 and both["bytes_billed"] == 2**40
+
+
 def test_finished_jobs_are_never_moved_back(store):
     store.insert_job(**JOB)
     store.update_job("axial_q_1", status="done", outcome="success", bytes_billed=10)

@@ -76,10 +76,10 @@ def summarize(store: HistoryStore, cfg: Config, start: float, end: float) -> dic
     totals["requests"] = len(reqs)
     rows.sort(key=lambda r: -(r["bytes_billed"] if cfg.billing_mode == "on_demand" else r["slot_hours"]))
     return {"billing_mode": cfg.billing_mode, "price_per_tib_usd": cfg.price_per_tib_usd,
-            "queries": rows, "totals": totals, "users": _by_user(cfg, reqs, jobs)}
+            "queries": rows, "totals": totals, "users": _by_user(store, cfg, reqs, jobs)}
 
 
-def _by_user(cfg: Config, reqs: list[dict], jobs: list[dict]) -> list[dict]:
+def _by_user(store: HistoryStore, cfg: Config, reqs: list[dict], jobs: list[dict]) -> list[dict]:
     """Requests per signed-in user; a job counts for the user whose request started it.
 
     Empty unless server.trust_iap_user recorded someone in this range.
@@ -91,7 +91,14 @@ def _by_user(cfg: Config, reqs: list[dict], jobs: list[dict]) -> list[dict]:
     job_by_id = {j["job_id"]: j for j in jobs}
     out = []
     for user, rs in by_user.items():
-        started = {r["job_id"] for r in rs if r["source"] == "bigquery" and r["job_id"] in job_by_id}
+        started = {r["job_id"] for r in rs if r["source"] == "bigquery" and r["job_id"]}
+        # A job is recorded when submitted and its request when it returns, so a job that
+        # started before the range still counts here, with the request that started it.
+        for jid in started - set(job_by_id):
+            j = store.get_job(jid)
+            if j:
+                job_by_id[jid] = j
+        started &= set(job_by_id)
         out.append({
             "user_email": user,
             "requests": len(rs),
