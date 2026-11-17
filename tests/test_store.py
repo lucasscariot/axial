@@ -98,6 +98,8 @@ def test_instances_share_history_without_collisions(backend):
 
 
 def test_instances_starting_together_create_the_schema_once(backend):
+    if backend.name != "postgres":
+        pytest.skip("only postgres is shared by instances; sqlite cannot switch to WAL concurrently")
     errors = []
 
     def start():
