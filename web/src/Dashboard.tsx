@@ -132,6 +132,16 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
     setRange({ start, end: addDays(endInclusive, 1) });
   }, []);
 
+  // The engine dates each period when it sends the definition. A page left open past midnight
+  // holds yesterday's dates, so ask again before applying one; fall back to what we have.
+  const onPreset = useCallback((presetId: string, start: string, end: string) => {
+    api.dashboard(id).then((d) => {
+      const fresh = d.date_range?.presets.find((p) => p.id === presetId);
+      setDef(d);
+      setRange(fresh ? { start: fresh.start, end: fresh.end } : { start, end });
+    }, () => setRange({ start, end }));
+  }, [id]);
+
   if (loadErr) return <main className="page"><div className="banner error">{loadErr}</div></main>;
   if (!def || !range) return <main className="page"><div className="page-head"><div className="skeleton-line" /></div></main>;
 
@@ -170,7 +180,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
                 const on = range.start === p.start && range.end === p.end;
                 return (
                   <button key={p.id} aria-pressed={on} className={on ? "on" : ""}
-                    onClick={() => setRange({ start: p.start, end: p.end })}>
+                    onClick={() => onPreset(p.id, p.start, p.end)}>
                     {p.label}
                   </button>
                 );

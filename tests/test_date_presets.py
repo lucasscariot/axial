@@ -93,3 +93,19 @@ def test_api_sends_the_default_and_the_periods(repo):
 def test_check_rejects_a_bad_default_period(repo, date_range, message):
     issues = [i.message for i in run_checks(Registry(dashboard(repo, date_range))) if i.level == "error"]
     assert any(message in i for i in issues), issues
+
+
+@pytest.mark.parametrize("date_range", [
+    "{default: today, max_days: 1}",       # the unused default_days (7) must not be compared with max_days
+    "{default: this_week, max_days: 7}",
+    "{default: last_week, max_days: 7}",
+])
+def test_a_short_dashboard_can_open_on_a_period(repo, date_range):
+    assert [i.message for i in run_checks(Registry(dashboard(repo, date_range))) if i.level == "error"] == []
+
+
+def test_default_days_is_still_validated_without_a_period(repo):
+    issues = [i.message for i in run_checks(Registry(dashboard(repo, "{default_days: 14, max_days: 7}")))]
+    assert "date_range.default_days exceeds max_days" in issues
+    issues = [i.message for i in run_checks(Registry(dashboard(repo, "{default_days: 0, max_days: 7}")))]
+    assert "date_range.default_days must be >= 1" in issues

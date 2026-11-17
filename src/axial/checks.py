@@ -104,11 +104,14 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
         err(f"date_range: unknown key {k!r} ({_use(DATE_RANGE_KEYS)})")
     dr = d.date_range
     if dr is not None:
-        if dr.default_days < 1 or dr.max_days < 1:
-            err("date_range.default_days and max_days must be >= 1")
-        if dr.default_days > dr.max_days:
-            err("date_range.default_days exceeds max_days")
-        if dr.default_preset is not None:
+        if dr.max_days < 1:
+            err("date_range.max_days must be >= 1")
+        if dr.default_preset is None:  # default_days is unused, and unset, when a period is the default
+            if dr.default_days < 1:
+                err("date_range.default_days must be >= 1")
+            if dr.default_days > dr.max_days:
+                err("date_range.default_days exceeds max_days")
+        else:
             preset = DATE_PRESETS.get(dr.default_preset)
             if preset is None:
                 err(f"date_range.default {dr.default_preset!r} is not a period ({_use(set(DATE_PRESETS))})")
