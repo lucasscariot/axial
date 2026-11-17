@@ -32,7 +32,7 @@ def fill(s):
                      row_count=3, truncated=False)
     return s.insert_request(requested_at=1002.5, query_id="q", dashboard_id=None, params_json='{"d": 2}',
                             sql_hash="h1", source="bigquery", job_id="axial_q_2", bypass_cache=True,
-                            outcome="timeout", error="still running", app_ms=90000.0)
+                            outcome="timeout", error="still running", app_ms=90000.0, user_email="a@example.com")
 
 
 def test_rows_keep_their_python_shapes(store):
@@ -60,6 +60,17 @@ def test_backends_return_identical_history(store, cfg):
                                  summarize(s, cfg, 0, 2000), query_runs(s, cfg, "q", 0, 2000)])
     assert dump(store) == dump(reference)
     reference.close()
+
+
+def test_user_totals_include_a_job_started_before_the_range(store, cfg):
+    fill(store)
+    # axial_q_2 was submitted at 1002.0; the request that started it returned at 1002.5.
+    store.update_job("axial_q_2", status="done", outcome="success", bytes_billed=2**40, slot_ms=1000)
+    assert summarize(store, cfg, 0, 1002.25)["users"] == []
+    (user,) = summarize(store, cfg, 1002.25, 2000)["users"]
+    assert user["user_email"] == "a@example.com" and user["jobs"] == 1 and user["bytes_billed"] == 2**40
+    (both,) = summarize(store, cfg, 0, 2000)["users"]
+    assert both["jobs"] == 1 and both["bytes_billed"] == 2**40
 
 
 def test_finished_jobs_are_never_moved_back(store):
@@ -147,6 +158,34 @@ def test_reopening_adds_new_columns_and_keeps_history(backend, monkeypatch):
     s.insert_job(**{**JOB, "job_id": "axial_q_9", "note": "new"})
     assert s.get_job("axial_q_9")["note"] == "new"
     backend.open()  # idempotent once upgraded
+
+
+def _as_version_1(monkeypatch):
+    """Make this engine behave like one with history schema 1, before query_requests.user_email."""
+    tables = {**store_mod.TABLES,
+              "query_requests": tuple(c for c in store_mod.TABLES["query_requests"] if c[0] != "user_email")}
+    monkeypatch.setattr(store_mod, "TABLES", tables)
+    monkeypatch.setattr(store_mod, "COLUMNS", {t: {c[0] for c in cols} for t, cols in tables.items()})
+    monkeypatch.setattr(store_mod, "SCHEMA_VERSION", 1)
+
+
+def test_version_1_history_gains_user_email_and_old_engines_refuse_it(backend):
+    with pytest.MonkeyPatch.context() as mp:
+        _as_version_1(mp)
+        old = backend.open()
+        rid = old.insert_request(query_id="q", params_json="{}", sql_hash="h", source="bigquery", outcome="ok")
+        assert "user_email" not in old.get_request(rid)
+        old.close()
+    s = backend.open()
+    assert s.get_request(rid)["user_email"] is None
+    new = s.insert_request(query_id="q", params_json="{}", sql_hash="h", source="app_cache", outcome="ok",
+                           user_email="a@example.com")
+    assert [r["user_email"] for r in s.requests_between(0, 1e12)] == ["a@example.com", None]
+    with pytest.MonkeyPatch.context() as mp:
+        _as_version_1(mp)
+        with pytest.raises(RuntimeError, match="schema 2, newer than this engine supports \\(1\\)"):
+            backend.open()
+    assert backend.open().get_request(new)["user_email"] == "a@example.com"
 
 
 def test_postgres_recovers_from_dropped_connections(backend):

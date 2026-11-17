@@ -6,11 +6,12 @@ import asyncio
 import contextlib
 import datetime as dt
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,6 +25,11 @@ from .store import HistoryStore, open_store
 from .usage import job_detail, query_runs, summarize
 
 WEB_DIST = Path(__file__).parent / "web_dist"
+# Set by Identity-Aware Proxy on every request it lets through, as
+# `accounts.google.com:user@example.com`. Read only when server.trust_iap_user is on.
+IAP_USER_HEADER = "x-goog-authenticated-user-email"
+EMAIL = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+MAX_EMAIL = 254
 
 
 class DatasetRequest(BaseModel):
@@ -31,6 +37,14 @@ class DatasetRequest(BaseModel):
     query_id: str
     filters: dict[str, Any] = Field(default_factory=dict)
     bypass_cache: bool = False
+
+
+def iap_user(value: str | None) -> str | None:
+    """The lowercased email in an IAP identity header, or None for anything else."""
+    if not value or len(value) > 2 * MAX_EMAIL:
+        return None
+    email = value.rpartition(":")[2].strip().lower()  # drop the accounts.google.com: namespace
+    return email if len(email) <= MAX_EMAIL and EMAIL.match(email) else None
 
 
 def _day_bounds(start: str | None, end: str | None) -> tuple[float, float]:
@@ -122,7 +136,7 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
     # --- datasets ---------------------------------------------------------
 
     @app.post("/api/datasets")
-    async def dataset(req: DatasetRequest):
+    async def dataset(req: DatasetRequest, request: Request):
         d = dashboard(req.dashboard_id)
         if req.query_id not in d.query_ids:
             raise HTTPException(400, f"query {req.query_id!r} is not on dashboard {d.id!r}")
@@ -147,7 +161,8 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
                     "sql_hash": q.sql_hash, "app_ms": (time.perf_counter() - t0) * 1000, "params": json.loads(normalize_params(values))}
 
         try:
-            served = await ex().run(q, values, dashboard_id=d.id, bypass_cache=req.bypass_cache)
+            user = iap_user(request.headers.get(IAP_USER_HEADER)) if cfg.trust_iap_user else None
+            served = await ex().run(q, values, dashboard_id=d.id, bypass_cache=req.bypass_cache, user_email=user)
         except QueryTimeout as e:
             raise HTTPException(504, {"message": str(e), "job_id": e.job_id, "request_id": e.request_id}) from None
         except QueryError as e:

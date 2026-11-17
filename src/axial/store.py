@@ -21,7 +21,7 @@ from .config import ConfigError
 if TYPE_CHECKING:
     from .config import Config
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: query_requests.user_email
 
 
 class HistoryStore(Protocol):
@@ -55,6 +55,7 @@ TABLES: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("app_ms", "real", ""),                        # time the app took to serve the dataset
         ("row_count", "int", ""),
         ("truncated", "flag", "NOT NULL DEFAULT 0"),
+        ("user_email", "text", ""),                    # signed-in user, when server.trust_iap_user is on
     ),
     "bigquery_jobs": (
         ("job_id", "text", "PRIMARY KEY"),

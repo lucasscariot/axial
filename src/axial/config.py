@@ -63,6 +63,7 @@ class Config:
     logo: Path | None = None
     slow_tile_ms: int = 3000
     port: int = 8765
+    trust_iap_user: bool = False  # record the IAP-signed-in user on each request
     storage_backend: str = "sqlite"
     history_path: Path = Path(".axial/history.sqlite3")
     storage_url: str | None = field(default=None, repr=False)  # may hold a password; never displayed
@@ -239,6 +240,7 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         logo=(root / disp["logo"]) if disp.get("logo") else None,
         slow_tile_ms=num(disp, "slow_tile_ms", 3000, int),
         port=num(server, "port", 8765, int),
+        trust_iap_user=server.get("trust_iap_user", False),
         storage_backend=storage.get("backend", "sqlite"),
         history_path=root / storage.get("path", ".axial/history.sqlite3"),
         storage_url=str(storage["url"]) if storage.get("url") else None,
@@ -257,6 +259,8 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
             raise ConfigError("display.logo must be an .svg, .png, .jpg or .webp file")
         if not cfg.logo.resolve().is_relative_to(root.resolve()):
             raise ConfigError("display.logo must be inside the project")
+    if not isinstance(cfg.trust_iap_user, bool):
+        raise ConfigError(f"server.trust_iap_user must be true or false, got {cfg.trust_iap_user!r}")
     if cfg.storage_backend not in STORAGE_BACKENDS:
         raise ConfigError(f"storage.backend {cfg.storage_backend!r} is not supported "
                           f"(available: {', '.join(STORAGE_BACKENDS)})")

@@ -1,5 +1,6 @@
 import asyncio
 import datetime as dt
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -262,3 +263,96 @@ def test_instances_sharing_history_reconcile_each_others_jobs(cfg, backend):
     job = b.store.get_job(ei.value.job_id)
     assert job["status"] == "done" and job["bytes_billed"] == wh.bytes_billed
     assert len(b.store.jobs_between(0, 1e12)) == 1 and b.store.get_request(ei.value.request_id)["outcome"] == "timeout"
+
+
+# --- signed-in users (server.trust_iap_user) ---------------------------------
+
+
+def as_user(client, header, query_id="bookings_daily", bypass=False):
+    r = client.post("/api/datasets", headers={"X-Goog-Authenticated-User-Email": header} if header else {},
+                    json={"dashboard_id": "booking_ops", "query_id": query_id, "filters": FILTERS,
+                          "bypass_cache": bypass})
+    assert r.status_code == 200, r.text
+    return r.json()["request_id"]
+
+
+def test_iap_header_is_ignored_unless_trusted(client, store):
+    rid = as_user(client, "accounts.google.com:alice@example.com")
+    assert store.get_request(rid)["user_email"] is None
+    u = client.get("/api/usage").json()
+    assert u["users"] == []
+    assert client.get(f"/api/requests/{rid}").json()["request"]["user_email"] is None
+
+
+def test_each_request_records_its_own_user(cfg, wh, store):
+    cfg.trust_iap_user = True
+    with TestClient(create_app(cfg, mode="live", warehouse=wh, store=store)) as c:
+        first = as_user(c, "accounts.google.com:Alice@Example.com")
+        cached = as_user(c, "accounts.google.com:bob@example.com")  # served from alice's result
+        anonymous = as_user(c, None)
+        assert len(wh.submitted) == 1
+        rows = {rid: store.get_request(rid) for rid in (first, cached, anonymous)}
+        assert [(r["source"], r["user_email"]) for r in rows.values()] == [
+            ("bigquery", "alice@example.com"), ("app_cache", "bob@example.com"), ("app_cache", None)]
+        assert all(s["labels"].keys() == {"app", "query_id", "sql_hash", "dashboard"} for s in wh.submitted)
+        assert not any("example.com" in s["job_id"] for s in wh.submitted)
+
+        detail = c.get(f"/api/requests/{cached}").json()
+        assert detail["request"]["user_email"] == "bob@example.com"
+        insp = c.get("/api/inspect", params={"dashboard_id": "booking_ops", "query_id": "bookings_daily",
+                                             "filters": json.dumps(FILTERS)}).json()
+        assert insp["request"]["user_email"] is None  # the latest request was anonymous
+        runs = c.get("/api/usage/bookings_daily").json()["runs"]
+        assert [r["user_email"] for r in runs] == [None, "bob@example.com", "alice@example.com"]
+
+        users = c.get("/api/usage").json()["users"]
+        assert [(u["user_email"], u["requests"], u["jobs"]) for u in users] == [
+            ("alice@example.com", 1, 1), ("bob@example.com", 1, 0)]
+        assert users[0]["bytes_billed"] == wh.bytes_billed and users[1]["bytes_billed"] == 0
+
+
+@pytest.mark.parametrize("header", [
+    "", "accounts.google.com:", "accounts.google.com:not-an-email", "accounts.google.com:a@b@c",
+    "accounts.google.com:al ice@example.com", "accounts.google.com:<script>@x.com",
+    "accounts.google.com:" + "a" * 250 + "@example.com", "x" * 5000, "accounts.google.com:élodie@example.com",
+])
+def test_malformed_iap_headers_record_no_user_and_never_fail(cfg, wh, store, header):
+    cfg.trust_iap_user = True
+    with TestClient(create_app(cfg, mode="live", warehouse=wh, store=store)) as c:
+        r = c.post("/api/datasets", headers={"X-Goog-Authenticated-User-Email": header.encode()},
+                   json={"dashboard_id": "booking_ops", "query_id": "bookings_daily", "filters": FILTERS})
+    assert r.status_code == 200
+    assert store.get_request(r.json()["request_id"])["user_email"] is None
+
+
+def test_iap_user_normalisation():
+    from axial.app import iap_user
+
+    assert iap_user("accounts.google.com:Jane.Doe+dash@Example.CO.uk") == "jane.doe+dash@example.co.uk"
+    assert iap_user("  bob@example.com ") == "bob@example.com"  # no namespace prefix
+    assert iap_user("securetoken.google.com/proj:ext@example.com") == "ext@example.com"
+    assert iap_user(None) is None and iap_user("accounts.google.com:12345") is None
+
+
+def test_shared_jobs_and_failures_are_attributed_to_each_waiting_user(cfg, store):
+    wh = FakeWarehouse(delay=0.2)
+    ex = make_exec(cfg, wh, store)
+    q, v = q_and_values(cfg)
+
+    async def go():
+        return await asyncio.gather(*[ex.run(q, v, user_email=u) for u in ("a@x.io", "b@x.io", None)])
+
+    served = asyncio.run(go())
+    assert len(wh.submitted) == 1
+    assert [(s.source, store.get_request(s.request_id)["user_email"]) for s in served] == [
+        ("bigquery", "a@x.io"), ("shared", "b@x.io"), ("shared", None)]
+
+    wh.timeout = True
+    with pytest.raises(QueryTimeout) as timed_out:
+        asyncio.run(ex.run(q, v, bypass_cache=True, user_email="c@x.io"))
+    assert store.get_request(timed_out.value.request_id)["user_email"] == "c@x.io"
+    wh.timeout, wh.fail_job = False, "boom"
+    with pytest.raises(QueryError) as failed:
+        asyncio.run(ex.run(q, v, bypass_cache=True, user_email="d@x.io"))
+    row = store.get_request(failed.value.request_id)
+    assert row["outcome"] == "error" and row["user_email"] == "d@x.io"

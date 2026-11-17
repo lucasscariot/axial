@@ -281,6 +281,11 @@ install `axial[postgres]`, set `storage.backend: postgres` and pass the connecti
 `AXIAL_STORAGE_URL`, so no password is committed. `axial guide config` has a Cloud SQL
 example. The app cache stays per instance.
 
+Behind Identity-Aware Proxy, `server.trust_iap_user: true` records which signed-in user made
+each request, shown in Inspect and Query usage. Turn it on only when IAP is the only way to
+reach the service: it trusts IAP's identity header without verifying its signature, and it
+stores viewers' emails in history. `axial guide config` explains the trade-offs.
+
 `engine: ">=0.1,<0.2"` pins the axial versions a project works with. `axial guide config`
 documents every key.
 
