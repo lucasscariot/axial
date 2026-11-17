@@ -129,7 +129,8 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
         if d.date_range:
             s, e = d.date_range.default()
             dr = {"default_start": s.isoformat(), "default_end": e.isoformat(), "max_days": d.date_range.max_days,
-                  "start_param": d.date_range.start_param, "end_param": d.date_range.end_param}
+                  "start_param": d.date_range.start_param, "end_param": d.date_range.end_param,
+                  "presets": d.date_range.presets()}
         issues = [i for i in run_checks(registry, d.id) if i.level == "error"]
         return {
             "id": d.id, "title": d.title, "description": d.description, "date_range": dr,

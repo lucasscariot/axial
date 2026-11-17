@@ -23,6 +23,11 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 
 ### Features
 
+- The dashboard date filter offers calendar periods (Today, This week, Last week, Month to
+  date, Last month, Quarter to date, Year to date) in place of the rolling `7d`, `14d` and
+  `28d` buttons. Weeks start on Monday. `date_range.default` opens a dashboard on one of
+  them; `default_days` still works. Existing dashboards need no change.
+
 - Homebrew installation from this repository's tap, with locked dependencies and
   DuckDB support. Release automation opens formula update PRs with verified checksums.
 - `storage.backend: postgres` keeps execution history in PostgreSQL (including Cloud SQL),
