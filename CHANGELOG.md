@@ -35,6 +35,20 @@ paths. The rename leaves history as it is. `axial agents sync` upgrades old mana
 without `--force`, preserving handwritten files and `CONTEXT.md`. Release tags through
 `v0.1.2` retain the old package name; the initial Homebrew formula pins the rename commit.
 
+## [0.2.0](https://github.com/lucasscariot/axial/compare/v0.1.2...v0.2.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* use axial, axial.yaml config version 2, AXIAL_ environment overrides and .axial history paths. Run axial guide migration before upgrading existing projects.
+
+### Features
+
+* add axial serve and a container template for Cloud Run ([#16](https://github.com/lucasscariot/axial/issues/16)) ([88f5b98](https://github.com/lucasscariot/axial/commit/88f5b9822308a5214a6ea85b5d48e7661312435a))
+* record the signed-in user on each request ([#18](https://github.com/lucasscariot/axial/issues/18)) ([9924fa1](https://github.com/lucasscariot/axial/commit/9924fa1835a0a2a8b6de76216795f6f2f26ed3b1))
+* rename bqdash to axial and publish a Homebrew tap ([#14](https://github.com/lucasscariot/axial/issues/14)) ([93bc3a7](https://github.com/lucasscariot/axial/commit/93bc3a7c6703a9e383d43ab0400ed975f74187a0))
+* **store:** add a postgres history backend ([#17](https://github.com/lucasscariot/axial/issues/17)) ([4828bc4](https://github.com/lucasscariot/axial/commit/4828bc4f9cca35ca078be45a7ff495d92466916f))
+
 ## [0.1.2](https://github.com/lucasscariot/bqdash/compare/v0.1.1...v0.1.2) (2026-11-13)
 
 
