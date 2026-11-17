@@ -8,20 +8,26 @@ import random
 from typing import Any
 
 from .config import Config
-from .registry import Query
+from .registry import Query, Registry
+
+
+def returns_one_row(reg: Registry, query_id: str) -> bool:
+    """A query some KPI tile reads with `reduce: single` (the default) returns one row by contract."""
+    return any(t.type == "kpi" and t.query == query_id and t.raw.get("reduce", "single") == "single"
+               for d in reg.dashboards.values() for t in d.tiles)
 
 
 def fixture_rows(cfg: Config, q: Query, values: dict[str, Any], start_param: str = "start_date",
-                 end_param: str = "end_date") -> list[dict]:
+                 end_param: str = "end_date", one_row: bool = False) -> list[dict]:
     path = cfg.fixtures_dir / f"{q.id}.json"
     if path.exists():
         data = json.loads(path.read_text())
         return data["rows"] if isinstance(data, dict) else data
-    return synthesize(q, values, start_param, end_param)
+    return synthesize(q, values, start_param, end_param, one_row)
 
 
 def synthesize(q: Query, values: dict[str, Any], start_param: str = "start_date",
-               end_param: str = "end_date") -> list[dict]:
+               end_param: str = "end_date", one_row: bool = False) -> list[dict]:
     rng = random.Random(q.id)
     start, end = values.get(start_param), values.get(end_param)
     date_cols = [c for c, t in q.columns.items() if t == "DATE"]
@@ -31,7 +37,10 @@ def synthesize(q: Query, values: dict[str, Any], start_param: str = "start_date"
         days = None
     time_cols = [c for c, t in q.columns.items() if t in ("DATE", "TIMESTAMP", "DATETIME")]
     dims = [c for c, t in q.columns.items() if t in ("STRING", "BOOL")]
-    if days:
+    if one_row:
+        n = 1  # a summary a KPI tile reads as a single value, whatever labels or dates it also returns
+        days = days[-1:] if days else None
+    elif days:
         n = len(days)
     elif not time_cols and not dims:
         n = 1  # a period-wide aggregate, e.g. a rate computed from numerator and denominator
