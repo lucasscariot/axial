@@ -52,6 +52,12 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
   no changes; a project that adds snippets should require this engine in its `engine:`
   range and add `!snippets/` and `!snippets/*.sql` to its `.dockerignore`.
 
+### Bug Fixes
+
+- Fixture mode makes up a single row for a query that a KPI tile reads with `reduce: single`.
+  It used to make up 25 rows, or one per day, whenever such a query also returned a label or
+  a date, so the tile showed "Expected 1 row" unless the project saved a fixture for it.
+
 **History schema 2:** request history gains a `user_email` column. The engine adds it to
 SQLite and PostgreSQL history when it opens them; older rows have no user. After that,
 older engines refuse the history database, so upgrade every instance that shares it.

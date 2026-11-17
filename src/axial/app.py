@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from .checks import run_checks
 from .config import Config, engine_version
 from .executor import Executor, QueryError, QueryTimeout, git_revision
-from .fixtures import fixture_rows
+from .fixtures import fixture_rows, returns_one_row
 from .registry import ParamError, Registry, normalize_params, resolve_params
 from .store import HistoryStore, open_store
 from .usage import job_detail, query_runs, summarize
@@ -160,7 +160,7 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
         if mode == "fixture":
             t0 = time.perf_counter()
             kw = {"start_param": d.date_range.start_param, "end_param": d.date_range.end_param} if d.date_range else {}
-            rows = fixture_rows(cfg, q, values, **kw)
+            rows = fixture_rows(cfg, q, values, one_row=returns_one_row(registry, q.id), **kw)
             return {"query_id": q.id, "rows": rows[: cfg.row_cap], "truncated": len(rows) > cfg.row_cap,
                     "total_rows": len(rows), "source": "fixture", "request_id": None, "job_id": None,
                     "sql_hash": q.sql_hash, "app_ms": (time.perf_counter() - t0) * 1000, "params": json.loads(normalize_params(values))}

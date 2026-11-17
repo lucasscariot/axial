@@ -94,7 +94,9 @@ resulting SQL, so editing a snippet gives every query that includes it a new SQL
 ## Fixtures
 
 `--fixture` serves `fixtures/<id>.json` for a query when that file exists, and otherwise
-makes up rows from `columns`. A fixture is a JSON list of rows:
+makes up rows from `columns`: one row per day of the range when there is a DATE column, 25
+rows when there are other labels, and a single row for a query that a KPI tile reads as one
+value (`reduce: single`, the default). A fixture is a JSON list of rows:
 
 ```json
 [{"day": "2026-11-01", "orders": 412, "revenue": 10315.5}]

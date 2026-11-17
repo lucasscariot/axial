@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from axial.app import create_app
+from axial.config import load_config
 from axial.executor import Executor, QueryError, QueryTimeout
 from axial.registry import Registry
 
@@ -383,3 +384,38 @@ def test_app_revision_comes_from_the_environment(cfg, wh, store, monkeypatch):
         assert c.app.state.executor.store.get_job(job_id)["app_revision"] == "abc123def456"
     monkeypatch.setenv("AXIAL_APP_REVISION", "")
     assert git_revision(cfg.root) is None  # the test project copy is not a git checkout
+
+
+def test_fixture_mode_makes_up_one_row_for_a_single_value_kpi(repo):
+    """A summary may return a label or a date beside its numbers; a `single` KPI still needs one row."""
+    (repo / "queries" / "region_summary.sql").write_text(
+        "SELECT 'North' AS region, @start_date AS since, 3 AS bookings")
+    (repo / "queries" / "region_summary.yaml").write_text(
+        "params: {start_date: DATE, end_date: DATE}\n"
+        "columns: {region: STRING, since: DATE, bookings: INT64}\n")
+    (repo / "queries" / "region_list.sql").write_text("SELECT 'North' AS region, 3 AS bookings")
+    (repo / "queries" / "region_list.yaml").write_text("columns: {region: STRING, bookings: INT64}\n")
+    (repo / "dashboards" / "regions.yaml").write_text(
+        "title: Regions\n"
+        "date_range: {default_days: 7, max_days: 31}\n"
+        "tiles:\n"
+        "  - {type: kpi, query: region_summary, value: bookings}\n"
+        "  - {type: table, query: region_summary}\n"
+        "  - {type: kpi, query: region_list, value: bookings, reduce: sum}\n"
+        "  - {type: kpi, query: bookings_daily, value: bookings, reduce: last}\n")
+
+    def rows(client, query):
+        r = client.post("/api/datasets", json={"dashboard_id": "regions", "query_id": query, "filters": FILTERS})
+        assert r.status_code == 200, r.text
+        return r.json()["rows"]
+
+    with TestClient(create_app(load_config(repo, environ={}), mode="fixture")) as c:
+        summary = rows(c, "region_summary")
+        assert len(summary) == 1 and set(summary[0]) == {"region", "since", "bookings"}
+        assert len(rows(c, "region_list")) == 25  # reduced over many rows: unchanged
+        assert len(rows(c, "bookings_daily")) == 7  # a series, even though a KPI reads its last value
+        # a saved fixture still wins
+        (repo / "fixtures").mkdir()
+        (repo / "fixtures" / "region_summary.json").write_text(
+            '[{"region": "A", "since": "2026-11-01", "bookings": 1}, {"region": "B", "since": "2026-11-01", "bookings": 2}]')
+        assert len(rows(c, "region_summary")) == 2
