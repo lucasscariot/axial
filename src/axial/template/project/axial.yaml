@@ -31,5 +31,5 @@ server:
   port: 8765                   # axial up uses the next free port if this one is taken
 
 storage:
-  backend: sqlite
+  backend: sqlite              # sqlite | postgres (see `axial guide config`)
   path: .axial/history.sqlite3

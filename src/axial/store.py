@@ -1,16 +1,22 @@
 """Execution history: one row per dataset request, one row per BigQuery job.
 
-`HistoryStore` is the interface the rest of the engine uses. `SQLiteStore` is the local
-implementation; a hosted deployment can add another backend behind the same interface.
+`HistoryStore` is the interface the rest of the engine uses. `SQLiteStore` keeps history in a
+local file. `PostgresStore` keeps it in a shared database, so hosted instances (for example on
+Cloud Run, whose disk is ephemeral) keep it across restarts. Both build the same schema from
+`TABLES` and return rows of the same shape: floats for seconds, ints for counters and 0/1 flags.
 """
 
 from __future__ import annotations
 
+import atexit
+import os
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
+
+from .config import ConfigError
 
 if TYPE_CHECKING:
     from .config import Config
@@ -28,96 +34,131 @@ class HistoryStore(Protocol):
     def latest_request(self, query_id: str, params_json: str | None = None) -> dict | None: ...
     def requests_between(self, start: float, end: float, query_id: str | None = None) -> list[dict]: ...
     def jobs_between(self, start: float, end: float, query_id: str | None = None) -> list[dict]: ...
+    def close(self) -> None: ...
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS query_requests (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  requested_at  REAL NOT NULL,          -- unix seconds
-  query_id      TEXT NOT NULL,
-  dashboard_id  TEXT,
-  params_json   TEXT NOT NULL,
-  sql_hash      TEXT NOT NULL,
-  source        TEXT NOT NULL,          -- bigquery | app_cache | shared | error
-  job_id        TEXT,                   -- job whose result served this request
-  bypass_cache  INTEGER NOT NULL DEFAULT 0,
-  outcome       TEXT NOT NULL,          -- ok | error | timeout
-  error         TEXT,
-  app_ms        REAL,                   -- time the app took to serve the dataset
-  row_count     INTEGER,
-  truncated     INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS query_requests_q ON query_requests (query_id, requested_at);
+# The one schema every backend creates: (column, type, constraints). Types are logical and
+# mapped per backend below. To add a column, append it here as nullable or with a DEFAULT and
+# bump SCHEMA_VERSION; both backends add missing columns to existing databases when they open.
+TABLES: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "query_requests": (
+        ("id", "id", ""),
+        ("requested_at", "real", "NOT NULL"),          # unix seconds
+        ("query_id", "text", "NOT NULL"),
+        ("dashboard_id", "text", ""),
+        ("params_json", "text", "NOT NULL"),
+        ("sql_hash", "text", "NOT NULL"),
+        ("source", "text", "NOT NULL"),                # bigquery | app_cache | shared | error
+        ("job_id", "text", ""),                        # job whose result served this request
+        ("bypass_cache", "flag", "NOT NULL DEFAULT 0"),
+        ("outcome", "text", "NOT NULL"),               # ok | error | timeout
+        ("error", "text", ""),
+        ("app_ms", "real", ""),                        # time the app took to serve the dataset
+        ("row_count", "int", ""),
+        ("truncated", "flag", "NOT NULL DEFAULT 0"),
+    ),
+    "bigquery_jobs": (
+        ("job_id", "text", "PRIMARY KEY"),
+        ("project", "text", ""),
+        ("location", "text", ""),
+        ("query_id", "text", "NOT NULL"),
+        ("sql_hash", "text", "NOT NULL"),
+        ("sql_text", "text", "NOT NULL"),
+        ("params_json", "text", "NOT NULL"),
+        ("app_revision", "text", ""),                  # git commit of the project, '+dirty' when queries/ is modified
+        ("engine_version", "text", ""),
+        ("use_query_cache", "flag", "NOT NULL DEFAULT 1"),
+        ("recorded_at", "real", "NOT NULL"),           # persisted before submission
+        ("status", "text", "NOT NULL"),                # pending | running | done | not_found
+        ("outcome", "text", ""),                       # success | error
+        ("error", "text", ""),
+        ("cache_hit", "flag", ""),                     # BigQuery result cache
+        ("bytes_processed", "int", ""),
+        ("bytes_billed", "int", ""),
+        ("slot_ms", "int", ""),
+        ("created_ms", "int", ""),                     # BigQuery job timestamps, epoch ms
+        ("started_ms", "int", ""),
+        ("ended_ms", "int", ""),
+        ("queue_ms", "int", ""),
+        ("exec_ms", "int", ""),
+        ("reconciled_at", "real", ""),
+    ),
+}
+INDEXES = (
+    ("query_requests_q", "query_requests", "query_id, requested_at"),
+    ("bigquery_jobs_q", "bigquery_jobs", "query_id, recorded_at"),
+    ("bigquery_jobs_status", "bigquery_jobs", "status"),
+)
+COLUMNS = {table: {c[0] for c in cols} for table, cols in TABLES.items()}
 
-CREATE TABLE IF NOT EXISTS bigquery_jobs (
-  job_id          TEXT PRIMARY KEY,
-  project         TEXT,
-  location        TEXT,
-  query_id        TEXT NOT NULL,
-  sql_hash        TEXT NOT NULL,
-  sql_text        TEXT NOT NULL,
-  params_json     TEXT NOT NULL,
-  app_revision    TEXT,                 -- git commit of the project, '+dirty' when queries/ is modified
-  engine_version  TEXT,
-  use_query_cache INTEGER NOT NULL DEFAULT 1,
-  recorded_at     REAL NOT NULL,        -- persisted before submission
-  status          TEXT NOT NULL,        -- pending | running | done | not_found
-  outcome         TEXT,                 -- success | error
-  error           TEXT,
-  cache_hit       INTEGER,              -- BigQuery result cache
-  bytes_processed INTEGER,
-  bytes_billed    INTEGER,
-  slot_ms         INTEGER,
-  created_ms      INTEGER,              -- BigQuery job timestamps, epoch ms
-  started_ms      INTEGER,
-  ended_ms        INTEGER,
-  queue_ms        INTEGER,
-  exec_ms         INTEGER,
-  reconciled_at   REAL
-);
-CREATE INDEX IF NOT EXISTS bigquery_jobs_q ON bigquery_jobs (query_id, recorded_at);
-CREATE INDEX IF NOT EXISTS bigquery_jobs_status ON bigquery_jobs (status);
-"""
+SQLITE_TYPES = {"id": "INTEGER PRIMARY KEY AUTOINCREMENT", "text": "TEXT", "real": "REAL",
+                "int": "INTEGER", "flag": "INTEGER"}
+# REAL is 4 bytes in Postgres, too coarse for unix seconds; bytes_billed needs 64 bits.
+POSTGRES_TYPES = {"id": "BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY", "text": "TEXT",
+                  "real": "DOUBLE PRECISION", "int": "BIGINT", "flag": "SMALLINT"}
 
 JOB_STAT_FIELDS = (
     "status", "outcome", "error", "cache_hit", "bytes_processed", "bytes_billed", "slot_ms",
     "created_ms", "started_ms", "ended_ms", "queue_ms", "exec_ms", "reconciled_at",
 )
+UNFINISHED = ("pending", "running")
 
 
-class SQLiteStore:
-    def __init__(self, path: Path | str):
-        if str(path) != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(str(path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA journal_mode=WAL")
-        self._lock = threading.Lock()
-        with self._lock:
-            found = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if found > SCHEMA_VERSION:
-                raise RuntimeError(f"history database {path} has schema {found}, newer than this engine "
-                                   f"supports ({SCHEMA_VERSION}); upgrade axial")
-            self._db.executescript(SCHEMA)
-            self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+def _column_ddl(name: str, kind: str, constraints: str, types: dict[str, str]) -> str:
+    return " ".join(x for x in (name, types[kind], constraints) if x)
 
-    def _exec(self, sql: str, args: tuple | dict = ()) -> sqlite3.Cursor:
-        with self._lock:
-            cur = self._db.execute(sql, args)
-            self._db.commit()
-            return cur
 
-    def _all(self, sql: str, args: tuple | dict = ()) -> list[dict]:
-        with self._lock:
-            return [dict(r) for r in self._db.execute(sql, args).fetchall()]
+def schema_ddl(types: dict[str, str]) -> list[str]:
+    """CREATE statements for the whole schema, safe to run on an existing database."""
+    out = []
+    for table, cols in TABLES.items():
+        body = ",\n  ".join(_column_ddl(*c, types) for c in cols)
+        out.append(f"CREATE TABLE IF NOT EXISTS {table} (\n  {body}\n)")
+    out += [f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})" for name, table, cols in INDEXES]
+    return out
+
+
+def missing_columns_ddl(existing: dict[str, set[str]], types: dict[str, str]) -> list[str]:
+    """ALTER statements adding columns declared in TABLES that an older database lacks."""
+    return [f"ALTER TABLE {table} ADD COLUMN {_column_ddl(*c, types)}"
+            for table, cols in TABLES.items() for c in cols if c[0] not in existing.get(table, set())]
+
+
+def _newer(where: str, found: int) -> RuntimeError:
+    return RuntimeError(f"history database {where} has schema {found}, newer than this engine "
+                        f"supports ({SCHEMA_VERSION}); upgrade axial")
+
+
+def _row(table: str, row: dict[str, Any]) -> dict[str, Any]:
+    bad = set(row) - COLUMNS[table]
+    if bad:
+        raise ValueError(f"unknown {table} fields {bad}")
+    # Flags are stored as 0/1 in every backend.
+    return {k: int(v) if isinstance(v, bool) else v for k, v in row.items()}
+
+
+class _SQLStore:
+    """The history queries, shared by every backend. SQL uses `?` placeholders."""
+
+    label = "history"
+
+    def _exec(self, sql: str, args: tuple = ()) -> None:
+        raise NotImplementedError
+
+    def _all(self, sql: str, args: tuple = ()) -> list[dict]:
+        raise NotImplementedError
+
+    def _insert(self, table: str, row: dict[str, Any], returning: str | None = None) -> Any:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        pass
 
     # --- jobs ---------------------------------------------------------------
 
     def insert_job(self, **row: Any) -> None:
         row.setdefault("recorded_at", time.time())
         row.setdefault("status", "pending")
-        cols = ",".join(row)
-        marks = ",".join(f":{k}" for k in row)
-        self._exec(f"INSERT INTO bigquery_jobs ({cols}) VALUES ({marks})", row)
+        self._insert("bigquery_jobs", _row("bigquery_jobs", row))
 
     def update_job(self, job_id: str, **fields: Any) -> None:
         bad = set(fields) - set(JOB_STAT_FIELDS)
@@ -125,8 +166,13 @@ class SQLiteStore:
             raise ValueError(f"unknown job fields {bad}")
         if not fields:
             return
-        sets = ",".join(f"{k}=:{k}" for k in fields)
-        self._exec(f"UPDATE bigquery_jobs SET {sets} WHERE job_id=:job_id", {**fields, "job_id": job_id})
+        fields = _row("bigquery_jobs", fields)
+        sets = ",".join(f"{k}=?" for k in fields)
+        sql = f"UPDATE bigquery_jobs SET {sets} WHERE job_id=?"
+        if fields.get("status") in UNFINISHED:
+            # The reconciler, here or on another instance, may already have recorded the end.
+            sql += " AND status IN ('pending','running')"
+        self._exec(sql, (*fields.values(), job_id))
 
     def get_job(self, job_id: str) -> dict | None:
         rows = self._all("SELECT * FROM bigquery_jobs WHERE job_id=?", (job_id,))
@@ -142,12 +188,7 @@ class SQLiteStore:
 
     def insert_request(self, **row: Any) -> int:
         row.setdefault("requested_at", time.time())
-        for k in ("bypass_cache", "truncated"):
-            if k in row:
-                row[k] = int(bool(row[k]))
-        cols = ",".join(row)
-        marks = ",".join(f":{k}" for k in row)
-        return int(self._exec(f"INSERT INTO query_requests ({cols}) VALUES ({marks})", row).lastrowid)
+        return int(self._insert("query_requests", _row("query_requests", row), returning="id"))
 
     def get_request(self, request_id: int) -> dict | None:
         rows = self._all("SELECT * FROM query_requests WHERE id=?", (request_id,))
@@ -182,7 +223,162 @@ class SQLiteStore:
         return self._all(sql + " ORDER BY recorded_at DESC", tuple(args))
 
 
+class SQLiteStore(_SQLStore):
+    def __init__(self, path: Path | str):
+        if str(path) != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.label = f"sqlite {path}"
+        self._db = sqlite3.connect(str(path), check_same_thread=False)
+        self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA journal_mode=WAL")
+        self._lock = threading.Lock()
+        with self._lock:
+            found = self._db.execute("PRAGMA user_version").fetchone()[0]
+            if found > SCHEMA_VERSION:
+                self._db.close()
+                raise _newer(str(path), found)
+            self._db.executescript(";\n".join(schema_ddl(SQLITE_TYPES)) + ";")
+            existing = {t: {r[1] for r in self._db.execute(f"PRAGMA table_info({t})")} for t in TABLES}
+            for stmt in missing_columns_ddl(existing, SQLITE_TYPES):
+                self._db.execute(stmt)
+            self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            self._db.commit()
+
+    def _exec(self, sql: str, args: tuple = ()) -> None:
+        with self._lock:
+            self._db.execute(sql, args)
+            self._db.commit()
+
+    def _all(self, sql: str, args: tuple = ()) -> list[dict]:
+        with self._lock:
+            return [dict(r) for r in self._db.execute(sql, args).fetchall()]
+
+    def _insert(self, table: str, row: dict[str, Any], returning: str | None = None) -> Any:
+        marks = ",".join("?" for _ in row)
+        with self._lock:
+            cur = self._db.execute(f"INSERT INTO {table} ({','.join(row)}) VALUES ({marks})", tuple(row.values()))
+            self._db.commit()
+            return cur.lastrowid if returning else None
+
+    def close(self) -> None:
+        with self._lock:
+            self._db.close()
+
+
+# Serializes schema setup when several instances start at once ("axial" in ASCII).
+SCHEMA_LOCK = 0x617869616C
+DRIVER_HINT = ("storage.backend: postgres needs the psycopg package: uv tool install --force "
+               "'axial[postgres] @ git+https://github.com/lucasscariot/axial.git@main', "
+               "or pip install 'axial[postgres]'")
+
+
+def postgres_conninfo(url: str | None) -> tuple[str, str]:
+    """The connection string to use and a description of it that never includes the password.
+
+    `url` is a postgresql:// URL or libpq key=value pairs; anything it leaves out comes from
+    the standard PG* environment variables (PGHOST, PGUSER, PGPASSWORD, ...).
+    """
+    try:
+        import psycopg
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+    except ImportError:
+        raise ConfigError(DRIVER_HINT) from None
+    try:
+        params = conninfo_to_dict(url or "")
+    except psycopg.Error:
+        # libpq's parse errors quote the string, which may hold the password.
+        raise ConfigError("storage.url is not a valid PostgreSQL connection string: use a "
+                          "postgresql://user@host/dbname URL or key=value pairs") from None
+    if "connect_timeout" not in params and "PGCONNECT_TIMEOUT" not in os.environ:
+        params["connect_timeout"] = 10
+    if "application_name" not in params and "PGAPPNAME" not in os.environ:
+        params["application_name"] = "axial"
+    get = lambda k, env, default="": str(params.get(k) or os.environ.get(env) or default)  # noqa: E731
+    user = get("user", "PGUSER")
+    where = get("host", "PGHOST", "localhost")
+    if not where.startswith("/"):
+        where += f":{get('port', 'PGPORT', '5432')}"
+    label = f"postgres {user + '@' if user else ''}{where}/{get('dbname', 'PGDATABASE', user)}"
+    return make_conninfo(**params), label
+
+
+class PostgresStore(_SQLStore):
+    """History in PostgreSQL, shared by every instance that points at the same database.
+
+    A small connection pool serves the event loop and worker threads; each connection is
+    checked before use, so connections the server closed while the instance sat idle are
+    replaced instead of failing a request. Statements autocommit.
+    """
+
+    def __init__(self, url: str | None = None, *, pool_size: int = 4):
+        try:
+            import psycopg
+            from psycopg.conninfo import conninfo_to_dict
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+        except ImportError:
+            raise ConfigError(DRIVER_HINT) from None
+        conninfo, self.label = postgres_conninfo(url)
+        try:
+            with psycopg.connect(conninfo, autocommit=True) as conn:
+                self._migrate(conn)
+        except psycopg.OperationalError as e:
+            reason = " ".join(str(e).split()) or type(e).__name__
+            # libpq does not quote passwords in its messages; make sure of it.
+            for secret in {conninfo_to_dict(conninfo).get("password"), os.environ.get("PGPASSWORD")} - {None, ""}:
+                reason = reason.replace(str(secret), "***")
+            raise ConfigError(f"cannot open the history database ({self.label}): {reason}") from None
+        self._pool = ConnectionPool(
+            conninfo, min_size=1, max_size=max(1, pool_size), open=True, name="axial-history",
+            kwargs={"autocommit": True, "row_factory": dict_row}, check=ConnectionPool.check_connection,
+        )
+        # CLI commands exit without closing their store; stop the pool's threads cleanly.
+        atexit.register(self._pool.close)
+
+    def _migrate(self, conn) -> None:
+        with conn.transaction():
+            conn.execute("SELECT pg_advisory_xact_lock(%s)", (SCHEMA_LOCK,))
+            conn.execute("CREATE TABLE IF NOT EXISTS history_schema (version INTEGER NOT NULL)")
+            found = conn.execute("SELECT max(version) FROM history_schema").fetchone()[0] or 0
+            if found > SCHEMA_VERSION:
+                raise _newer(self.label, found)
+            for stmt in schema_ddl(POSTGRES_TYPES):
+                conn.execute(stmt)
+            existing: dict[str, set[str]] = {}
+            for table, column in conn.execute(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() AND table_name = ANY(%s)", (list(TABLES),)):
+                existing.setdefault(table, set()).add(column)
+            for stmt in missing_columns_ddl(existing, POSTGRES_TYPES):
+                conn.execute(stmt)
+            if found < SCHEMA_VERSION:
+                conn.execute("DELETE FROM history_schema")
+                conn.execute("INSERT INTO history_schema (version) VALUES (%s)", (SCHEMA_VERSION,))
+
+    # The shared queries use `?`; none of them contains a literal `?` or `%`.
+
+    def _exec(self, sql: str, args: tuple = ()) -> None:
+        with self._pool.connection() as conn:
+            conn.execute(sql.replace("?", "%s"), args)
+
+    def _all(self, sql: str, args: tuple = ()) -> list[dict]:
+        with self._pool.connection() as conn:
+            return conn.execute(sql.replace("?", "%s"), args).fetchall()
+
+    def _insert(self, table: str, row: dict[str, Any], returning: str | None = None) -> Any:
+        marks = ",".join("%s" for _ in row)
+        sql = f"INSERT INTO {table} ({','.join(row)}) VALUES ({marks})"
+        with self._pool.connection() as conn:
+            cur = conn.execute(sql + (f" RETURNING {returning}" if returning else ""), tuple(row.values()))
+            return cur.fetchone()[returning] if returning else None
+
+    def close(self) -> None:
+        self._pool.close()
+
+
 def open_store(cfg: "Config") -> HistoryStore:
     if cfg.storage_backend == "sqlite":
         return SQLiteStore(cfg.history_path)
+    if cfg.storage_backend == "postgres":
+        return PostgresStore(cfg.storage_url, pool_size=cfg.storage_pool_size)
     raise ValueError(f"unsupported storage backend {cfg.storage_backend!r}")

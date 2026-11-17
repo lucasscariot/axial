@@ -13,6 +13,19 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # The history store tests run against this as well as SQLite.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: axial
+          POSTGRES_PASSWORD: axial
+          POSTGRES_DB: axial
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U axial" --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      AXIAL_TEST_POSTGRES_URL: postgresql://axial:axial@localhost:5432/axial
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

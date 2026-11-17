@@ -17,6 +17,10 @@ CONFIG_FILE = "axial.yaml"
 SCHEMA_VERSION = 2
 SECTIONS = ("bigquery", "duckdb", "billing", "execution", "display", "server", "storage")
 WAREHOUSES = ("bigquery", "duckdb")
+STORAGE_BACKENDS = ("sqlite", "postgres")
+# Used verbatim rather than parsed as YAML: a connection string may hold a password, and a
+# YAML parse error would quote it.
+RAW_ENV = {("storage", "url")}
 ENV_PREFIX = "AXIAL_"
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -61,6 +65,8 @@ class Config:
     port: int = 8765
     storage_backend: str = "sqlite"
     history_path: Path = Path(".axial/history.sqlite3")
+    storage_url: str | None = field(default=None, repr=False)  # may hold a password; never displayed
+    storage_pool_size: int = 4
 
     @property
     def queries_dir(self) -> Path:
@@ -119,7 +125,10 @@ def apply_env(raw: dict, environ: dict[str, str]) -> dict:
         for section in SECTIONS:
             if rest.startswith(section + "_"):
                 key = rest[len(section) + 1:]
-                parsed = yaml.safe_load(value) if value != "" else None
+                if (section, key) in RAW_ENV:
+                    parsed = value or None
+                else:
+                    parsed = yaml.safe_load(value) if value != "" else None
                 out.setdefault(section, {})
                 if not isinstance(out[section], dict):
                     out[section] = {}
@@ -232,6 +241,8 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
         port=num(server, "port", 8765, int),
         storage_backend=storage.get("backend", "sqlite"),
         history_path=root / storage.get("path", ".axial/history.sqlite3"),
+        storage_url=str(storage["url"]) if storage.get("url") else None,
+        storage_pool_size=num(storage, "pool_size", 4, int),
     )
     if cfg.local:
         # A local database bills nothing: there are no bytes billed, slots or job costs to show.
@@ -246,6 +257,9 @@ def load_config(start: Path | None = None, *, environ: dict[str, str] | None = N
             raise ConfigError("display.logo must be an .svg, .png, .jpg or .webp file")
         if not cfg.logo.resolve().is_relative_to(root.resolve()):
             raise ConfigError("display.logo must be inside the project")
-    if cfg.storage_backend != "sqlite":
-        raise ConfigError(f"storage.backend {cfg.storage_backend!r} is not supported (available: sqlite)")
+    if cfg.storage_backend not in STORAGE_BACKENDS:
+        raise ConfigError(f"storage.backend {cfg.storage_backend!r} is not supported "
+                          f"(available: {', '.join(STORAGE_BACKENDS)})")
+    if cfg.storage_pool_size < 1:
+        raise ConfigError("storage.pool_size must be at least 1")
     return cfg

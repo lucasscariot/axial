@@ -46,9 +46,11 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
     assert mode in ("live", "fixture")
     registry = Registry(cfg)
     state: dict[str, Any] = {"executor": None}
+    owned_store = None
 
     if mode == "live":
-        store = store or open_store(cfg)
+        if store is None:
+            store = owned_store = open_store(cfg)
         if warehouse is None:
             from .warehouses import make_warehouse
 
@@ -63,6 +65,8 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
         yield
         if task:
             task.cancel()
+        if owned_store is not None:
+            owned_store.close()
 
     app = FastAPI(title="axial", lifespan=lifespan)
     app.state.registry = registry

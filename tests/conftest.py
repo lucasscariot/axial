@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import os
 import shutil
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import pytest
 
 from axial.bq import JobFailed, JobState, SubmissionUncertain
 from axial.config import load_config
+from axial.store import PostgresStore, SQLiteStore
 
 PROJECT = Path(__file__).resolve().parent / "project"
 
@@ -110,3 +113,53 @@ def repo(tmp_path):
 @pytest.fixture
 def cfg(repo):
     return load_config(repo, environ={})
+
+
+# --- history backends ------------------------------------------------------
+# Store tests run against every backend. Postgres runs when AXIAL_TEST_POSTGRES_URL points at
+# a server (CI starts one); each test gets its own schema, dropped afterwards.
+
+POSTGRES_URL = os.environ.get("AXIAL_TEST_POSTGRES_URL")
+
+
+class Backend:
+    """Opens stores on one database, so a test can act like several instances sharing it."""
+
+    def __init__(self, name: str, tmp_path: Path):
+        self.name = name
+        self.path = tmp_path / "history.sqlite3"
+        self.url: str | None = None
+        self.opened: list = []
+
+    def open(self):
+        s = SQLiteStore(self.path) if self.name == "sqlite" else PostgresStore(self.url, pool_size=2)
+        self.opened.append(s)
+        return s
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def backend(request, tmp_path):
+    b = Backend(request.param, tmp_path)
+    schema = None
+    if b.name == "postgres":
+        if not POSTGRES_URL:
+            pytest.skip("set AXIAL_TEST_POSTGRES_URL to run the postgres history tests")
+        import psycopg
+        from psycopg.conninfo import make_conninfo
+
+        schema = f"axial_test_{uuid.uuid4().hex[:12]}"
+        # A configured server that cannot be reached is a failure, not a skip.
+        with psycopg.connect(POSTGRES_URL, autocommit=True) as conn:
+            conn.execute(f"CREATE SCHEMA {schema}")
+        b.url = make_conninfo(POSTGRES_URL, options=f"-csearch_path={schema}")
+    yield b
+    for s in b.opened:
+        s.close()
+    if schema:
+        with psycopg.connect(POSTGRES_URL, autocommit=True) as conn:
+            conn.execute(f"DROP SCHEMA {schema} CASCADE")
+
+
+@pytest.fixture
+def store(backend):
+    return backend.open()
