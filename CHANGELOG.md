@@ -17,6 +17,10 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 
 - Homebrew installation from this repository's tap, with locked dependencies and
   DuckDB support. Release automation opens formula update PRs with verified checksums.
+- `storage.backend: postgres` keeps execution history in PostgreSQL (including Cloud SQL),
+  so hosted instances share it and keep it across restarts. Install `axial[postgres]` and
+  pass the connection string in `AXIAL_STORAGE_URL`. Existing projects need no changes and
+  their SQLite history format is unchanged.
 
 **Upgrade notes:** run `axial guide migration`. Stop the old engine, rename
 `bqdash.yaml` to `axial.yaml`, set `version: 2`, move `.bqdash/` to `.axial/` and update

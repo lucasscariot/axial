@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from axial.app import create_app
 from axial.executor import Executor, QueryError, QueryTimeout
 from axial.registry import Registry
-from axial.store import SQLiteStore as Store
 
 from .conftest import FakeWarehouse
 
@@ -32,8 +31,8 @@ def wh():
 
 
 @pytest.fixture
-def client(cfg, wh):
-    app = create_app(cfg, mode="live", warehouse=wh, store=Store(":memory:"))
+def client(cfg, wh, store):
+    app = create_app(cfg, mode="live", warehouse=wh, store=store)
     with TestClient(app) as c:
         yield c
 
@@ -113,10 +112,10 @@ def test_rejects_bad_filters(client):
     assert notile.status_code == 400
 
 
-def test_row_cap_truncates(cfg, wh):
+def test_row_cap_truncates(cfg, wh, store):
     cfg.row_cap = 2
     wh.rows = [{"day": f"2026-11-0{i}", "bookings": i, "gross_value": 1.0} for i in range(1, 6)]
-    app = create_app(cfg, mode="live", warehouse=wh, store=Store(":memory:"))
+    app = create_app(cfg, mode="live", warehouse=wh, store=store)
     with TestClient(app) as c:
         r = c.post("/api/datasets", json={"dashboard_id": "booking_ops", "query_id": "bookings_daily",
                                           "filters": FILTERS}).json()
@@ -126,10 +125,10 @@ def test_row_cap_truncates(cfg, wh):
 # --- executor-level behaviour ------------------------------------------------
 
 
-def make_exec(cfg, wh, **over):
+def make_exec(cfg, wh, store, **over):
     for k, v in over.items():
         setattr(cfg, k, v)
-    return Executor(cfg, Store(":memory:"), wh)
+    return Executor(cfg, store, wh)
 
 
 def q_and_values(cfg):
@@ -137,9 +136,9 @@ def q_and_values(cfg):
     return q, {"start_date": dt.date(2026, 11, 1), "end_date": dt.date(2026, 11, 8)}
 
 
-def test_concurrent_identical_requests_share_one_job(cfg):
+def test_concurrent_identical_requests_share_one_job(cfg, store):
     wh = FakeWarehouse(delay=0.2)
-    ex = make_exec(cfg, wh)
+    ex = make_exec(cfg, wh, store)
     q, v = q_and_values(cfg)
 
     async def go():
@@ -150,9 +149,9 @@ def test_concurrent_identical_requests_share_one_job(cfg):
     assert sorted(s.source for s in served) == ["bigquery"] + ["shared"] * 4
 
 
-def test_concurrency_is_bounded(cfg):
+def test_concurrency_is_bounded(cfg, store):
     wh = FakeWarehouse(delay=0.1)
-    ex = make_exec(cfg, wh, max_concurrent_jobs=2)
+    ex = make_exec(cfg, wh, store, max_concurrent_jobs=2)
     q = Registry(cfg).queries["bookings_daily"]
     active = {"now": 0, "max": 0}
     orig = wh.wait_and_fetch
@@ -175,26 +174,26 @@ def test_concurrency_is_bounded(cfg):
     assert len(wh.submitted) == 6 and active["max"] <= 2
 
 
-def test_uncertain_submission_looks_up_same_job_before_retrying(cfg, monkeypatch):
+def test_uncertain_submission_looks_up_same_job_before_retrying(cfg, store, monkeypatch):
     monkeypatch.setattr("axial.executor.time.sleep", lambda s: None)
     wh = FakeWarehouse()
     wh.fail_submit_uncertain = 1
     wh.uncertain_but_created = True
-    ex = make_exec(cfg, wh)
+    ex = make_exec(cfg, wh, store)
     q, v = q_and_values(cfg)
     s = asyncio.run(ex.run(q, v))
     assert len(wh.submitted) == 1 and s.result.job_id == wh.submitted[0]["job_id"]
 
     wh2 = FakeWarehouse()
     wh2.fail_submit_uncertain = 2  # job never landed: retried with the same ID
-    ex2 = make_exec(cfg, wh2)
+    ex2 = make_exec(cfg, wh2, store)
     s2 = asyncio.run(ex2.run(q, v))
     assert len(wh2.submitted) == 1 and s2.result.job_id == wh2.submitted[0]["job_id"]
 
 
-def test_job_recorded_before_submission(cfg):
+def test_job_recorded_before_submission(cfg, store):
     wh = FakeWarehouse()
-    ex = make_exec(cfg, wh)
+    ex = make_exec(cfg, wh, store)
     seen = {}
     orig = wh.submit
 
@@ -208,10 +207,10 @@ def test_job_recorded_before_submission(cfg):
     assert seen["row"]["status"] == "pending" and seen["row"]["location"] == "EU"
 
 
-def test_timeout_then_reconcile(cfg):
+def test_timeout_then_reconcile(cfg, store):
     wh = FakeWarehouse()
     wh.timeout = True
-    ex = make_exec(cfg, wh)
+    ex = make_exec(cfg, wh, store)
     q, v = q_and_values(cfg)
     with pytest.raises(QueryTimeout) as ei:
         asyncio.run(ex.run(q, v))
@@ -228,10 +227,10 @@ def test_timeout_then_reconcile(cfg):
     assert job["status"] == "done" and job["bytes_billed"] == wh.bytes_billed
 
 
-def test_failed_job_records_error(cfg):
+def test_failed_job_records_error(cfg, store):
     wh = FakeWarehouse()
     wh.fail_job = "Query exceeded limit for bytes billed"
-    ex = make_exec(cfg, wh)
+    ex = make_exec(cfg, wh, store)
     q, v = q_and_values(cfg)
     with pytest.raises(QueryError, match="bytes billed"):
         asyncio.run(ex.run(q, v))
@@ -247,3 +246,19 @@ def test_fixture_mode_makes_no_queries(cfg):
         assert r["source"] == "fixture" and len(r["rows"]) == 7
         assert set(r["rows"][0]) == {"day", "bookings", "gross_value"}
         assert c.get("/api/usage").status_code == 409
+
+
+def test_instances_sharing_history_reconcile_each_others_jobs(cfg, backend):
+    wh = FakeWarehouse()
+    wh.timeout = True
+    a, b = Executor(cfg, backend.open(), wh), Executor(cfg, backend.open(), wh)
+    q, v = q_and_values(cfg)
+    with pytest.raises(QueryTimeout) as ei:
+        asyncio.run(a.run(q, v))
+    wh.timeout = False
+    a.store._exec("UPDATE bigquery_jobs SET recorded_at = recorded_at - 60")
+    assert a.reconcile_once() + b.reconcile_once() == 1  # the second instance finds nothing left
+    a.store.update_job(ei.value.job_id, status="running")  # a stale writer cannot reopen it
+    job = b.store.get_job(ei.value.job_id)
+    assert job["status"] == "done" and job["bytes_billed"] == wh.bytes_billed
+    assert len(b.store.jobs_between(0, 1e12)) == 1 and b.store.get_request(ei.value.request_id)["outcome"] == "timeout"

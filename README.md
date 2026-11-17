@@ -208,8 +208,9 @@ median execution time, bytes billed and slot-ms between versions.
    - If a submit times out, Axial looks up that same ID before retrying.
    - If the dashboard stops waiting, a background reconciler still records the final job stats.
 
-History lives in `.axial/history.sqlite3`, behind a storage interface. App cache hits reuse
-the original job, so spend is never counted twice.
+History lives in `.axial/history.sqlite3`, or in PostgreSQL for hosted instances that
+share it (`storage.backend: postgres`). App cache hits reuse the original job, so spend is
+never counted twice.
 
 ## Built for coding agents
 
@@ -266,7 +267,7 @@ AXIAL_BIGQUERY_BILLING_PROJECT=other-project AXIAL_SERVER_PORT=9000 axial up
 | `execution` | `default_cache_ttl_seconds`, `max_concurrent_jobs`, `row_cap` |
 | `display` | `title`, `locale`, `currency`, `brand_color`, `logo`, `slow_tile_ms` |
 | `server` | `port` (the next free port is used if it's taken) |
-| `storage` | `backend` (`sqlite`), `path` |
+| `storage` | `backend` (`sqlite` \| `postgres`), `path` (SQLite), `url` and `pool_size` (PostgreSQL) |
 
 To chart a local DuckDB file instead of BigQuery, create the project with
 `axial init my-dash --duckdb ../data/analytics.duckdb` (or set `warehouse: duckdb` and
@@ -274,6 +275,11 @@ To chart a local DuckDB file instead of BigQuery, create the project with
 disappear because nothing is billed. The Homebrew installation includes DuckDB. With uv,
 install with the extra: `uv tool install
 'axial[duckdb] @ git+https://github.com/lucasscariot/axial.git@main'`.
+
+To keep history across restarts on a host with an ephemeral disk (Cloud Run, for example),
+install `axial[postgres]`, set `storage.backend: postgres` and pass the connection string in
+`AXIAL_STORAGE_URL`, so no password is committed. `axial guide config` has a Cloud SQL
+example. The app cache stays per instance.
 
 `engine: ">=0.1,<0.2"` pins the axial versions a project works with. `axial guide config`
 documents every key.
