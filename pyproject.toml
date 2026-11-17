@@ -1,6 +1,6 @@
 [project]
 name = "axial"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local, Git-backed BigQuery and DuckDB dashboards engine with per-query cost tracing"
 requires-python = ">=3.11"
 dependencies = [
