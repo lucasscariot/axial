@@ -12,6 +12,14 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
   repository, UI text, BigQuery job labels and generated project/agent files.
 - Config format version **2** uses `axial.yaml`, `AXIAL_` environment overrides and
   `.axial/history.sqlite3` as the default history path.
+- Stricter project checks. An unknown key in `axial.yaml` (or set through
+  `AXIAL_<SECTION>_<KEY>`) stops the engine from loading the project. `axial check`, and so
+  `axial up` and `axial serve`, reject unknown keys in queries, dashboards and tiles,
+  fixtures that do not match their query's `columns`, `.yml` files, files in subfolders of
+  `queries/`, `dashboards/` and `fixtures/`, a `.sql` with no `.yaml` and a fixture with no
+  query. `axial agents sync --check` exits 1 when a managed path holds a hand-written file.
+  The config format stays at version **2**: a file that used only documented keys loads as
+  before.
 
 ### Features
 
@@ -34,6 +42,15 @@ older engines refuse the history database, so upgrade every instance that shares
 paths. The rename leaves history as it is. `axial agents sync` upgrades old managed markers
 without `--force`, preserving handwritten files and `CONTEXT.md`. Release tags through
 `v0.1.2` retain the old package name; the initial Homebrew formula pins the rename commit.
+
+**Upgrade notes for the stricter checks:** keep `version: 2`. Run `axial check` with the new
+engine and fix what it reports before widening the project's `engine:` range. Each error
+names the file and key and lists the known keys. Remove or correct stray keys in `axial.yaml`
+and unset any `AXIAL_<SECTION>_<KEY>` variable that names no setting. Rename `.yml` files to
+`.yaml`, move files out of subfolders, delete a `.sql` or fixture that has no query, and
+correct fixtures whose columns or types differ from the query's `columns`. If
+`axial agents sync --check` fails on a hand-written file, run `axial agents sync --force` to
+replace it, or move its content to `CONTEXT.md` first.
 
 ## [0.2.0](https://github.com/lucasscariot/axial/compare/v0.1.2...v0.2.0) (2026-11-17)
 

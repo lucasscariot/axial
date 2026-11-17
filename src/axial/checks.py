@@ -1,11 +1,19 @@
-"""`axial check`: validate dashboards and their saved queries without touching BigQuery."""
+"""`axial check`: validate dashboards, their saved queries and fixtures without touching BigQuery."""
 
 from __future__ import annotations
 
+import datetime as dt
+import json
+import math
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
 
-from .registry import (COLUMN_TYPES, FORMATS, NUMERIC_TYPES, PARAM_TYPES, REDUCERS, TILE_TYPES, Dashboard,
-                       Query, Registry)
+from .config import Config
+from .registry import (COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
+                       PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, TILE_KEYS, TILE_TYPES, Dashboard, Query,
+                       Registry)
 from .sqlcheck import check_read_only_select, referenced_params
 
 
@@ -17,6 +25,14 @@ class Issue:
 
     def __str__(self) -> str:
         return f"{self.level.upper():7} {self.where}: {self.message}"
+
+
+def _unknown(keys, known: set[str]) -> list[str]:
+    return sorted(str(k) for k in keys if k not in known)
+
+
+def _use(known: set[str]) -> str:
+    return f"use one of {', '.join(sorted(known))}"
 
 
 def check_query(q: Query) -> list[Issue]:
@@ -34,6 +50,12 @@ def check_query(q: Query) -> list[Issue]:
         return out
     for p in check_read_only_select(q.sql):
         err(p)
+    for k in _unknown(q.raw, QUERY_KEYS):
+        err(f"unknown key {k!r} ({_use(QUERY_KEYS)})")
+    for name, spec in (q.raw.get("params") or {}).items():
+        if isinstance(spec, dict):
+            for k in _unknown(spec, PARAM_KEYS):
+                err(f"param {name}: unknown key {k!r} ({_use(PARAM_KEYS)})")
     for p in q.params.values():
         if p.type not in PARAM_TYPES:
             err(f"param {p.name}: unsupported type {p.type} (use one of {', '.join(sorted(PARAM_TYPES))})")
@@ -72,6 +94,10 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
 
     if not d.tiles:
         err("dashboard has no tiles")
+    for k in _unknown(d.raw, DASHBOARD_KEYS):
+        err(f"unknown key {k!r} ({_use(DASHBOARD_KEYS)})")
+    for k in _unknown(d.raw.get("date_range") or {}, DATE_RANGE_KEYS):
+        err(f"date_range: unknown key {k!r} ({_use(DATE_RANGE_KEYS)})")
     dr = d.date_range
     if dr is not None:
         if dr.default_days < 1 or dr.max_days < 1:
@@ -102,6 +128,9 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             continue
         if not 1 <= t.span <= 12:
             err("span must be between 1 and 12", tw)
+        allowed = COMMON_TILE_KEYS | TILE_KEYS[t.type]
+        for k in _unknown(t.raw, allowed):
+            err(f"unknown key {k!r} for a {t.type} tile ({_use(allowed)})", tw)
         if t.type == "text":
             if not isinstance(t.raw.get("markdown"), str) or not t.raw["markdown"].strip():
                 err("text tiles need a markdown string", tw)
@@ -162,6 +191,97 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
     return out
 
 
+def _fits(value: Any, kind: str) -> bool:
+    """Whether a fixture value is what the warehouse returns for a column of this type."""
+    if value is None:
+        return True
+    if kind == "INT64":
+        return type(value) is int
+    if kind == "BOOL":
+        return type(value) is bool
+    if kind == "STRING":
+        return isinstance(value, str)
+    if kind in NUMERIC_TYPES:
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            return False
+        if isinstance(value, float):
+            return math.isfinite(value)
+        try:
+            return Decimal(str(value)).is_finite()
+        except InvalidOperation:
+            return False
+    if kind in ("DATE", "DATETIME", "TIMESTAMP") and isinstance(value, str):
+        try:
+            (dt.date if kind == "DATE" else dt.datetime).fromisoformat(value)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
+MAX_FIXTURE_ISSUES = 5  # per fixture: one broken column would otherwise report every row
+
+
+def check_fixture(q: Query, cfg: Config) -> list[Issue]:
+    """A saved fixture must hold rows with exactly the query's declared columns and types."""
+    path = cfg.fixtures_dir / f"{q.id}.json"
+    if not path.exists() or not q.columns:
+        return []
+    where = f"fixtures/{q.id}"
+    try:
+        data = json.loads(path.read_text())
+    except (ValueError, UnicodeDecodeError) as e:
+        return [Issue("error", where, f"invalid JSON: {e}")]
+    rows = data.get("rows") if isinstance(data, dict) else data
+    if not isinstance(rows, list):
+        return [Issue("error", where, "expected a JSON list of rows")]
+    problems: list[str] = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            problems.append(f"row {i} must be an object")
+            continue
+        missing, extra = sorted(set(q.columns) - set(row)), sorted(set(row) - set(q.columns))
+        if missing or extra:
+            parts = ([f"missing {', '.join(missing)}"] if missing else []) + \
+                    ([f"not a column of {q.id}: {', '.join(extra)}"] if extra else [])
+            problems.append(f"row {i}: {'; '.join(parts)}")
+            continue
+        for c, t in q.columns.items():
+            if t in COLUMN_TYPES and not _fits(row[c], t):
+                problems.append(f"row {i}: {c} is {row[c]!r}, expected {t} or null")
+    out = [Issue("error", where, m) for m in problems[:MAX_FIXTURE_ISSUES]]
+    if len(problems) > MAX_FIXTURE_ISSUES:
+        out.append(Issue("error", where, f"{len(problems) - MAX_FIXTURE_ISSUES} more problem(s) not shown"))
+    return out
+
+
+def check_layout(cfg: Config) -> list[Issue]:
+    """Files the engine would silently ignore: wrong extension, wrong folder or no partner."""
+    out: list[Issue] = []
+
+    def err(path: Path, m: str) -> None:
+        out.append(Issue("error", str(path.relative_to(cfg.root)), m))
+
+    for folder, loaded in ((cfg.queries_dir, {".yaml", ".sql"}), (cfg.dashboards_dir, {".yaml"}),
+                           (cfg.fixtures_dir, {".json"})):
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file():
+                continue
+            suffix = path.suffix.lower()
+            if path.parent != folder:
+                if suffix in loaded | {".yml"}:
+                    err(path, f"files in subfolders are not loaded; move it to {folder.name}/")
+            elif suffix == ".yml" and ".yaml" in loaded:
+                err(path, "rename to .yaml; .yml files are not loaded")
+            elif suffix == ".sql" and not path.with_suffix(".yaml").exists():
+                err(path, f"no {path.stem}.yaml next to it, so this query is not loaded")
+            elif suffix == ".json" and not (cfg.queries_dir / f"{path.stem}.yaml").exists():
+                err(path, f"no query named {path.stem}; a fixture is matched to its query by file name")
+    return out
+
+
 def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
     issues: list[Issue] = [Issue("error", str(e.path.relative_to(reg.cfg.root)), e.message) for e in reg.errors]
     if dashboard_id is not None:
@@ -174,8 +294,10 @@ def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
     else:
         dashboards = list(reg.dashboards.values())
         query_ids = list(reg.queries)
+        issues += check_layout(reg.cfg)
     for q_id in query_ids:
         issues += check_query(reg.queries[q_id])
+        issues += check_fixture(reg.queries[q_id], reg.cfg)
     for d in dashboards:
         issues += check_dashboard(d, reg)
     return issues

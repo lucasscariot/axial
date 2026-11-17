@@ -62,6 +62,8 @@ def test_sync_restores_edits_removes_stale_and_respects_unmanaged(project):
     assert "local edit" not in skill.read_text()
     assert not stale.exists() and mine.exists()
     assert (project / "AGENTS.md").read_text() == "# hand written\n"
+    r = run("agents", "sync", "--check")  # everything else is current, but agents read a hand-written guide
+    assert r.exit_code == 1 and "1 file(s) not managed by axial" in r.output
     assert run("agents", "sync", "--force").exit_code == 0
     assert ag.is_managed(project / "AGENTS.md")
     assert run("agents", "sync", "--check").exit_code == 0

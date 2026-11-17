@@ -43,6 +43,29 @@ ORDER BY day
   skip partitions, and select only the columns you need. Compare `axial dry-run` bytes
   for a 1-day and a 7-day range: if they're the same, the filter isn't pruning partitions.
 
+- Keep `queries/` flat and use `.yaml`. `axial check` reports files that would not be loaded:
+  a `.yml` file, a file in a subfolder, or a `.sql` without its `.yaml`. It also rejects any
+  key not shown above.
+
+## Fixtures
+
+`--fixture` serves `fixtures/<id>.json` for a query when that file exists, and otherwise
+makes up rows from `columns`. A fixture is a JSON list of rows:
+
+```json
+[{"day": "2026-11-01", "orders": 412, "revenue": 10315.5}]
+```
+
+`axial check` validates every fixture against its query:
+
+- each row has exactly the declared `columns`;
+- values match the column type: a JSON integer for INT64, a number or numeric string for
+  FLOAT64, NUMERIC and BIGNUMERIC, `true`/`false` for BOOL, a string for STRING, and an ISO
+  string for DATE, DATETIME and TIMESTAMP. `null` is allowed anywhere;
+- the file is directly inside `fixtures/` and named after an existing query.
+
+Fixtures are not filtered by the date range.
+
 ## DuckDB projects
 
 With `warehouse: duckdb`, write DuckDB SQL but keep `@params`: axial rewrites them to
