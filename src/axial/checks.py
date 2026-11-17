@@ -16,8 +16,8 @@ from packaging.version import InvalidVersion, Version
 
 from .config import Config, engine_version
 from .registry import (COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
-                       PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, TILE_KEYS, TILE_TYPES, Dashboard, Query,
-                       Registry)
+                       PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, SNIPPET_NAME, TILE_KEYS, TILE_TYPES,
+                       Dashboard, Query, Registry, includes)
 from .sqlcheck import check_read_only_select, referenced_params
 
 
@@ -146,6 +146,8 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             continue
         q = reg.queries.get(t.query)
         if q is None:
+            if any(e.path.parent == reg.cfg.queries_dir and e.path.stem == t.query for e in reg.errors):
+                continue  # the query exists but failed to load; that error is already reported
             known = ", ".join(sorted(reg.queries)) or "none"
             err(f"query {t.query!r} does not exist (known: {known})", tw)
             continue
@@ -286,6 +288,35 @@ def check_layout(cfg: Config) -> list[Issue]:
     return out
 
 
+def check_snippets(cfg: Config) -> list[Issue]:
+    """snippets/ holds flat <name>.sql files, each included by at least one query."""
+    folder = cfg.snippets_dir
+    if not folder.is_dir():
+        return []
+    out: list[Issue] = []
+    used: set[str] = set()
+    if cfg.queries_dir.is_dir():
+        for sql in cfg.queries_dir.glob("*.sql"):
+            used.update(includes(sql.read_text()))
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file():
+            continue
+        where = str(path.relative_to(cfg.root))
+        if path.parent != folder:
+            out.append(Issue("error", where, "files in subfolders are not loaded; move it to snippets/"))
+        elif path.suffix != ".sql":
+            out.append(Issue("error", where, "snippets/ holds only .sql files; this file is not loaded"))
+        elif not SNIPPET_NAME.fullmatch(path.stem):
+            out.append(Issue("error", where, "a snippet name may hold only letters, digits and underscores, "
+                             "and cannot start with a digit; rename it so a query can include it"))
+        elif not path.read_text().strip():
+            out.append(Issue("error", where, "snippet is empty"))
+        elif path.stem not in used:
+            out.append(Issue("warning", where, f"no query includes it; add a {{{{ {path.stem} }}}} line "
+                             "to a query's SQL or delete the file"))
+    return out
+
+
 ENGINE_PIN = re.compile(r"^ARG AXIAL_REF=(\S+)", re.M)
 
 
@@ -325,6 +356,7 @@ def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
         dashboards = list(reg.dashboards.values())
         query_ids = list(reg.queries)
         issues += check_layout(reg.cfg)
+        issues += check_snippets(reg.cfg)
         issues += check_engine_pin(reg.cfg)
     for q_id in query_ids:
         issues += check_query(reg.queries[q_id])

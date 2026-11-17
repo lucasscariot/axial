@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 import yaml
 
 from .config import Config
+from .sqlcheck import strip_sql
 
 PARAM_TYPES = {"DATE", "INT64", "FLOAT64", "NUMERIC", "STRING", "BOOL"}
 COLUMN_TYPES = PARAM_TYPES | {"TIMESTAMP", "DATETIME", "BIGNUMERIC"}
@@ -33,6 +35,11 @@ TILE_KEYS = {
     "table": {"columns", "formats"},
     "text": {"markdown"},
 }
+
+
+# The one way to share SQL: a line holding only `{{ name }}` is replaced by snippets/<name>.sql.
+SNIPPET_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_INCLUDE = re.compile(r"^[ \t]*\{\{[ \t]*(.*?)[ \t]*\}\}[ \t]*\r?$", re.M)
 
 
 class ParamError(ValueError):
@@ -61,6 +68,7 @@ class Query:
     cache_ttl_seconds: int
     description: str = ""
     raw: dict = field(default_factory=dict)
+    snippets: tuple[str, ...] = ()  # names included by the .sql file; `sql` is already expanded
 
     @property
     def sql_hash(self) -> str:
@@ -143,12 +151,57 @@ def _parse_params(raw: Any, path: Path) -> dict[str, Param]:
     return params
 
 
-def load_query(yaml_path: Path, cfg: Config) -> Query:
+def includes(sql: str) -> list[str]:
+    """What each include line of this SQL asks for, in order. Not validated."""
+    return [m.group(1) for m in _INCLUDE.finditer(sql)]
+
+
+def expand_sql(sql: str, snippets: dict[str, str]) -> tuple[str, tuple[str, ...]]:
+    """Replace each `{{ name }}` line with snippets/<name>.sql; return the SQL and the names used.
+
+    Inclusion is purely textual and one level deep. Nothing but the project's own files
+    decides what is included: there are no arguments, variables or conditions, so values
+    still reach the warehouse only as @params.
+    """
+    problems: list[str] = []
+    used: list[str] = []
+
+    def include(m: re.Match) -> str:
+        name = m.group(1)
+        if not SNIPPET_NAME.fullmatch(name):
+            problems.append(f"{{{{ {name} }}}} is not an include: write one snippet name, as in {{{{ base_ctes }}}}")
+        elif name not in snippets:
+            known = ", ".join(sorted(snippets)) or "none"
+            problems.append(f"{{{{ {name} }}}}: snippets/{name}.sql does not exist (known: {known})")
+        elif includes(snippets[name]):
+            problems.append(f"{{{{ {name} }}}}: snippets/{name}.sql includes another snippet; "
+                            "snippets cannot include snippets")
+        else:
+            if name not in used:
+                used.append(name)
+            return snippets[name].removesuffix("\n")
+        return m.group()
+
+    expanded = _INCLUDE.sub(include, sql)
+    if not problems and re.search(r"\{\{|\}\}", strip_sql(expanded)):
+        problems.append("{{ }} is only for including a snippet and must be alone on its line; "
+                        "pass values as @params")
+    if problems:
+        raise ValueError("; ".join(dict.fromkeys(problems)))
+    return expanded, tuple(used)
+
+
+def load_query(yaml_path: Path, cfg: Config, snippets: dict[str, str] | None = None) -> Query:
     raw = yaml.safe_load(yaml_path.read_text()) or {}
     if not isinstance(raw, dict):
         raise LoadError(yaml_path, "expected a mapping")
     sql_path = yaml_path.with_suffix(".sql")
-    sql = sql_path.read_text() if sql_path.exists() else ""
+    sql, used = "", ()
+    if sql_path.exists():
+        try:
+            sql, used = expand_sql(sql_path.read_text(), snippets or {})
+        except ValueError as e:
+            raise LoadError(sql_path, str(e)) from None
     return Query(
         id=yaml_path.stem,
         title=raw.get("title", yaml_path.stem),
@@ -162,6 +215,7 @@ def load_query(yaml_path: Path, cfg: Config) -> Query:
         labels={str(k): str(v) for k, v in (raw.get("labels") or {}).items()},
         cache_ttl_seconds=int(raw.get("cache_ttl_seconds", cfg.default_cache_ttl_seconds)),
         raw=raw,
+        snippets=used,
     )
 
 
@@ -205,10 +259,11 @@ def load_dashboard(path: Path) -> Dashboard:
 
 
 class Registry:
-    """Loads queries and dashboards, reloading when files change on disk."""
+    """Loads queries, snippets and dashboards, reloading when files change on disk."""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
+        self.snippets: dict[str, str] = {}
         self.queries: dict[str, Query] = {}
         self.dashboards: dict[str, Dashboard] = {}
         self.errors: list[LoadError] = []
@@ -217,7 +272,8 @@ class Registry:
 
     def _files(self) -> list[Path]:
         files: list[Path] = []
-        for d, pats in ((self.cfg.queries_dir, ("*.yaml", "*.sql")), (self.cfg.dashboards_dir, ("*.yaml",))):
+        for d, pats in ((self.cfg.queries_dir, ("*.yaml", "*.sql")), (self.cfg.dashboards_dir, ("*.yaml",)),
+                        (self.cfg.snippets_dir, ("*.sql",))):
             if d.exists():
                 for pat in pats:
                     files.extend(sorted(d.glob(pat)))
@@ -240,10 +296,15 @@ class Registry:
         queries: dict[str, Query] = {}
         dashboards: dict[str, Dashboard] = {}
         errors: list[LoadError] = []
+        snippets: dict[str, str] = {}
+        if self.cfg.snippets_dir.exists():
+            for p in sorted(self.cfg.snippets_dir.glob("*.sql")):
+                if SNIPPET_NAME.fullmatch(p.stem):
+                    snippets[p.stem] = p.read_text()
         if self.cfg.queries_dir.exists():
             for p in sorted(self.cfg.queries_dir.glob("*.yaml")):
                 try:
-                    queries[p.stem] = load_query(p, self.cfg)
+                    queries[p.stem] = load_query(p, self.cfg, snippets)
                 except (LoadError, yaml.YAMLError, ValueError, TypeError) as e:
                     errors.append(e if isinstance(e, LoadError) else LoadError(p, str(e)))
         if self.cfg.dashboards_dir.exists():
@@ -252,7 +313,7 @@ class Registry:
                     dashboards[p.stem] = load_dashboard(p)
                 except (LoadError, yaml.YAMLError, ValueError, TypeError) as e:
                     errors.append(e if isinstance(e, LoadError) else LoadError(p, str(e)))
-        self.queries, self.dashboards, self.errors = queries, dashboards, errors
+        self.snippets, self.queries, self.dashboards, self.errors = snippets, queries, dashboards, errors
         self._stamp = self._current_stamp()
 
 

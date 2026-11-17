@@ -22,7 +22,7 @@ FROM python:3.13-slim
 COPY --from=engine /opt/axial /opt/axial
 RUN useradd --uid 10001 --create-home axial
 WORKDIR /app
-# .dockerignore is an allowlist, so this copies axial.yaml, dashboards/ and queries/ only
+# .dockerignore is an allowlist, so this copies axial.yaml, dashboards/, queries/ and snippets/ only
 COPY . /app
 # history (storage.path) is written under .axial/; it lasts only as long as the container
 RUN mkdir -p /app/.axial && chown axial:axial /app/.axial

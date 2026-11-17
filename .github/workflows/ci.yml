@@ -74,6 +74,16 @@ jobs:
           uv run axial init /tmp/demo --billing-project demo-project --location EU
           sed -i "s/^ARG AXIAL_REF=.*/ARG AXIAL_REF=$AXIAL_REF/" /tmp/demo/Dockerfile
           grep -q "^ARG AXIAL_REF=$AXIAL_REF$" /tmp/demo/Dockerfile
+      - name: Move the example query's filter into a snippet
+        working-directory: /tmp/demo
+        run: |
+          # `axial serve` refuses a project whose include cannot be resolved, so the health
+          # check below also proves that snippets/ reaches the image
+          mkdir snippets
+          grep -A1 '^WHERE ' queries/orders_daily.sql > snippets/orders_in_range.sql
+          sed -i -e '/^WHERE /,+1d' -e '/^FROM /a {{ orders_in_range }}' queries/orders_daily.sql
+          uv run --project "$GITHUB_WORKSPACE" axial sql orders_daily | tee /tmp/expanded.sql
+          diff "$GITHUB_WORKSPACE/src/axial/template/project/queries/orders_daily.sql" /tmp/expanded.sql
       - name: Run the project's workflow steps
         working-directory: /tmp/demo
         run: |
@@ -91,7 +101,7 @@ jobs:
         run: |
           files=$(docker exec dashboards sh -c 'cd /app && find . -type f -not -path "./.axial/*" | sort | tr "\n" " "')
           echo "$files"
-          test "$files" = "./Dockerfile ./axial.yaml ./dashboards/overview.yaml ./queries/orders_daily.sql ./queries/orders_daily.yaml "
+          test "$files" = "./Dockerfile ./axial.yaml ./dashboards/overview.yaml ./queries/orders_daily.sql ./queries/orders_daily.yaml ./snippets/orders_in_range.sql "
       - name: Show server logs
         if: always()
         run: docker logs dashboards || true

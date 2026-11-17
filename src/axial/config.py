@@ -94,6 +94,11 @@ class Config:
         return self.root / "queries"
 
     @property
+    def snippets_dir(self) -> Path:
+        """SQL fragments that queries include with a `{{ name }}` line."""
+        return self.root / "snippets"
+
+    @property
     def dashboards_dir(self) -> Path:
         return self.root / "dashboards"
 

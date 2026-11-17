@@ -149,6 +149,10 @@ tiles:
 The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar`, `funnel`,
 `table` and markdown `text`. `axial guide dashboards` has the full reference.
 
+Queries that need the same SQL share it as a snippet: a `{{ name }}` line in a query is
+replaced by `snippets/<name>.sql`. That is the whole mechanism; `axial guide queries` has the
+rules.
+
 ## Everyday use
 
 | Want to… | Run |
@@ -158,6 +162,7 @@ The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar
 | Serve in a container (`0.0.0.0`, `$PORT`, no browser) | `axial serve` |
 | Publish on Cloud Run behind IAP | `axial deploy` (`--dry-run` prints the commands) |
 | Validate queries and dashboards | `axial check` |
+| Print a query's SQL with its snippets included | `axial sql <query>` |
 | See what a query would scan (free) | `axial dry-run <query>` |
 | Find tables and columns (free) | `axial tables`, `axial schema <table>` |
 | See what each query costs (free) | `axial usage`, or **Query usage** in the app |
@@ -251,7 +256,7 @@ hand-written file. Project notes go in `CONTEXT.md`.
 
 Every project `axial init` creates has a `Dockerfile`, an allowlist `.dockerignore` and a
 GitHub Actions workflow. The image installs the project's axial release, copies only
-`axial.yaml`, `dashboards/` and `queries/`, runs as a non-root user and starts `axial serve`.
+`axial.yaml`, `dashboards/`, `queries/` and `snippets/`, runs as a non-root user and starts `axial serve`.
 The workflow checks every pull request with that same image, so the Dockerfile's `AXIAL_REF`
 is the project's one engine pin.
 

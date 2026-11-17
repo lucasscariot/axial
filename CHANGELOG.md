@@ -38,13 +38,19 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
   `deploy:` should require this engine in its `engine:` range, because earlier releases
   ignore the section and have no `axial deploy`.
 - `axial init` now writes an allowlist `.dockerignore`, so the image and the upload to Cloud
-  Build hold only `axial.yaml`, `dashboards/` and `queries/`, and
+  Build hold only `axial.yaml`, `dashboards/`, `queries/` and `snippets/`, and
   `.github/workflows/check.yml`, which builds the image and uses it to run `axial check`,
   `axial agents sync --check` and a fixture-mode `axial serve` probe on every pull request,
   with no Google credentials.
 - `axial check` treats the Dockerfile's `AXIAL_REF` as the project's engine pin: a release
   pinned there that falls outside `engine:` in `axial.yaml` is an error, and a ref that is
   not a release tag is a warning.
+- Queries share SQL through **snippets**: a line holding only `{{ name }}` in a query's SQL is
+  replaced by `snippets/<name>.sql`. Inclusion is textual and one level deep, with no
+  arguments or logic; values still go through `@params`. `axial check`, dry runs and SQL
+  versions use the resulting SQL, and `axial sql <query>` prints it. Existing projects need
+  no changes; a project that adds snippets should require this engine in its `engine:`
+  range and add `!snippets/` and `!snippets/*.sql` to its `.dockerignore`.
 
 **History schema 2:** request history gains a `user_email` column. The engine adds it to
 SQLite and PostgreSQL history when it opens them; older rows have no user. After that,

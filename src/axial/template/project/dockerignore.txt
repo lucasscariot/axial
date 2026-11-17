@@ -10,3 +10,5 @@
 !queries/
 !queries/*.sql
 !queries/*.yaml
+!snippets/
+!snippets/*.sql
