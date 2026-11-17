@@ -56,4 +56,13 @@ subfolder is not loaded, and `axial check` reports it.
   `start_param`/`end_param` to rename them.
 - Every query on the dashboard must declare both params, or neither.
 - Any other params a query declares need a default.
-- `default_days: 7` means the last 7 days including today.
+- The filter offers calendar periods, not rolling day counts, so everyone reading a number
+  means the same days: **Today**, **This week**, **Last week**, **Month to date**,
+  **Last month**, **Quarter to date** and **Year to date**. Weeks start on Monday, "to date"
+  includes today, and "last" periods are whole. A dashboard shows the periods that always
+  fit within `max_days` (7 for the weeks, 31 for the months, 92 for the quarter, 366 for the
+  year). Any other range can be typed into the two date fields.
+- `default` opens the dashboard on one of them: `today`, `this_week`, `last_week`,
+  `month_to_date`, `last_month`, `quarter_to_date` or `year_to_date`. For example
+  `date_range: {default: month_to_date, max_days: 31}`.
+- `default_days: 7` opens it on the last 7 days including today instead. Use one or the other.

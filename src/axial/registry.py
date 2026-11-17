@@ -8,7 +8,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -25,7 +25,7 @@ REDUCERS = {"sum", "min", "max", "first", "last", "count", "single"}
 QUERY_KEYS = {"title", "description", "params", "columns", "formats", "labels", "cache_ttl_seconds"}
 PARAM_KEYS = {"type", "default"}
 DASHBOARD_KEYS = {"title", "description", "date_range", "tiles"}
-DATE_RANGE_KEYS = {"default_days", "max_days", "start_param", "end_param"}
+DATE_RANGE_KEYS = {"default", "default_days", "max_days", "start_param", "end_param"}
 COMMON_TILE_KEYS = {"type", "query", "span", "title", "height"}
 TILE_KEYS = {
     "kpi": {"value", "reduce", "format"},
@@ -86,17 +86,67 @@ class Query:
         }
 
 
+def _week_start(d: dt.date) -> dt.date:
+    return d - dt.timedelta(days=d.weekday())  # Monday, as in ISO 8601
+
+
+def _next(d: dt.date) -> dt.date:
+    return d + dt.timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class DatePreset:
+    """A calendar period of the date filter. `span` returns [start, end) for a given today."""
+
+    id: str
+    label: str
+    longest_days: int  # the most days it can ever cover, so a dashboard offers it every day or never
+    span: Callable[[dt.date], tuple[dt.date, dt.date]]
+
+
+# Calendar periods instead of rolling day counts: "this week" always starts on a Monday and
+# "last month" is always a whole month, so two people reading a number mean the same days.
+# Periods "to date" include today.
+DATE_PRESETS: dict[str, DatePreset] = {p.id: p for p in (
+    DatePreset("today", "Today", 1, lambda t: (t, _next(t))),
+    DatePreset("this_week", "This week", 7, lambda t: (_week_start(t), _next(t))),
+    DatePreset("last_week", "Last week", 7,
+               lambda t: (_week_start(t) - dt.timedelta(days=7), _week_start(t))),
+    DatePreset("month_to_date", "Month to date", 31, lambda t: (t.replace(day=1), _next(t))),
+    DatePreset("last_month", "Last month", 31,
+               lambda t: ((t.replace(day=1) - dt.timedelta(days=1)).replace(day=1), t.replace(day=1))),
+    DatePreset("quarter_to_date", "Quarter to date", 92,
+               lambda t: (dt.date(t.year, 3 * ((t.month - 1) // 3) + 1, 1), _next(t))),
+    DatePreset("year_to_date", "Year to date", 366, lambda t: (dt.date(t.year, 1, 1), _next(t))),
+)}
+
+
 @dataclass
 class DateRange:
     default_days: int = 7
     max_days: int = 31
     start_param: str = "start_date"
     end_param: str = "end_date"
+    default_preset: str | None = None  # a DATE_PRESETS id; replaces default_days
 
     def default(self, today: dt.date | None = None) -> tuple[dt.date, dt.date]:
-        """Last `default_days` days including today, as [start, end)."""
-        end = (today or dt.date.today()) + dt.timedelta(days=1)
+        """The default preset's period, else the last `default_days` days including today, as [start, end)."""
+        today = today or dt.date.today()
+        preset = DATE_PRESETS.get(self.default_preset or "")
+        if preset:
+            return preset.span(today)
+        end = _next(today)
         return end - dt.timedelta(days=self.default_days), end
+
+    def presets(self, today: dt.date | None = None) -> list[dict]:
+        """The periods this dashboard offers: every preset that always fits within max_days."""
+        today = today or dt.date.today()
+        out = []
+        for p in DATE_PRESETS.values():
+            if p.longest_days <= self.max_days:
+                start, end = p.span(today)
+                out.append({"id": p.id, "label": p.label, "start": start.isoformat(), "end": end.isoformat()})
+        return out
 
 
 @dataclass
@@ -233,6 +283,7 @@ def load_dashboard(path: Path) -> Dashboard:
             max_days=int(dr.get("max_days", 31)),
             start_param=dr.get("start_param", "start_date"),
             end_param=dr.get("end_param", "end_date"),
+            default_preset=None if dr.get("default") is None else str(dr["default"]),
         )
     tiles = []
     for t in raw.get("tiles") or []:

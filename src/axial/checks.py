@@ -15,7 +15,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from .config import Config, engine_version
-from .registry import (COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
+from .registry import (DATE_PRESETS, COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
                        PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, SNIPPET_NAME, TILE_KEYS, TILE_TYPES,
                        Dashboard, Query, Registry, includes)
 from .sqlcheck import check_read_only_select, referenced_params
@@ -104,10 +104,22 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
         err(f"date_range: unknown key {k!r} ({_use(DATE_RANGE_KEYS)})")
     dr = d.date_range
     if dr is not None:
-        if dr.default_days < 1 or dr.max_days < 1:
-            err("date_range.default_days and max_days must be >= 1")
-        if dr.default_days > dr.max_days:
-            err("date_range.default_days exceeds max_days")
+        if dr.max_days < 1:
+            err("date_range.max_days must be >= 1")
+        if dr.default_preset is None:  # default_days is unused, and unset, when a period is the default
+            if dr.default_days < 1:
+                err("date_range.default_days must be >= 1")
+            if dr.default_days > dr.max_days:
+                err("date_range.default_days exceeds max_days")
+        else:
+            preset = DATE_PRESETS.get(dr.default_preset)
+            if preset is None:
+                err(f"date_range.default {dr.default_preset!r} is not a period ({_use(set(DATE_PRESETS))})")
+            elif preset.longest_days > dr.max_days:
+                err(f"date_range.default {preset.id} can cover {preset.longest_days} days, more than "
+                    f"max_days ({dr.max_days})")
+            if "default_days" in (d.raw.get("date_range") or {}):
+                err("date_range: use default or default_days, not both")
 
     for q_id in d.query_ids:
         q = reg.queries.get(q_id)

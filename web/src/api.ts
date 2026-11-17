@@ -24,7 +24,10 @@ export type Tile = {
 
 export type DashboardDef = {
   id: string; title: string; description: string;
-  date_range: { default_start: string; default_end: string; max_days: number; start_param: string; end_param: string } | null;
+  date_range: {
+    default_start: string; default_end: string; max_days: number; start_param: string; end_param: string;
+    presets: { id: string; label: string; start: string; end: string }[]; // calendar periods; end exclusive
+  } | null;
   tiles: Tile[]; queries: Record<string, QueryMeta>; errors: string[];
 };
 

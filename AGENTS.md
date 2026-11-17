@@ -22,5 +22,8 @@ from `src/axial/template/agents/`.
 - Tests run against `tests/project/` and a fake warehouse (`tests/conftest.py`). Run them
   with `make test`.
 - Config format changes: bump `SCHEMA_VERSION` in `config.py` and describe the migration in
-  `CHANGELOG.md`. History schema changes: bump `SCHEMA_VERSION` in `store.py`.
+  `CHANGELOG.md`. That means a change after which a valid `axial.yaml` is rejected or read
+  differently. A new optional key, in `axial.yaml` or in query and dashboard files, needs a
+  `CHANGELOG.md` entry but no bump: every existing project would otherwise have to edit its
+  file to keep loading. History schema changes: bump `SCHEMA_VERSION` in `store.py`.
 - Use Conventional Commits.
