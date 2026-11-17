@@ -64,7 +64,7 @@ makes up rows from `columns`. A fixture is a JSON list of rows:
   string for DATE, DATETIME and TIMESTAMP. `null` is allowed anywhere;
 - the file is directly inside `fixtures/` and named after an existing query.
 
-Fixtures are not filtered by the date range, and are not copied into the container image.
+Fixtures are not filtered by the date range.
 
 ## DuckDB projects
 
