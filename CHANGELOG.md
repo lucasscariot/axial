@@ -86,6 +86,24 @@ extra runtime file, such as a logo or a DuckDB file. If `axial check` then repor
 `AXIAL_REF` outside `engine:`, change one of the two so they agree. Add `deploy:` to
 `axial.yaml` only if you use `axial deploy`.
 
+## [0.3.0](https://github.com/lucasscariot/axial/compare/v0.2.0...v0.3.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **check:** projects with an unknown key in axial.yaml no longer load, and `axial check`, `axial up` and `axial serve` fail on unknown query, dashboard or tile keys, on fixtures that do not match their query, and on files the engine would ignore. `axial agents sync --check` fails on unmanaged agent files; run `axial agents sync --force` after moving project notes to CONTEXT.md.
+
+### Features
+
+* add axial deploy and ship CI and an allowlist image with axial init ([#21](https://github.com/lucasscariot/axial/issues/21)) ([60207c1](https://github.com/lucasscariot/axial/commit/60207c19ce7d0588d4da6da31314d5e40e1ac6b3))
+* **check:** reject unknown keys, bad fixtures and files that are never loaded ([#20](https://github.com/lucasscariot/axial/issues/20)) ([0e1fe2d](https://github.com/lucasscariot/axial/commit/0e1fe2d6e6c181c0bd811757eb6e58fb14679e00))
+* share SQL between queries with snippets ([#22](https://github.com/lucasscariot/axial/issues/22)) ([df8cf74](https://github.com/lucasscariot/axial/commit/df8cf7442210db0815e4b21a31a630e46103f114))
+
+
+### Bug Fixes
+
+* **fixtures:** make up one row for queries a KPI reads as a single value ([#23](https://github.com/lucasscariot/axial/issues/23)) ([b375e5d](https://github.com/lucasscariot/axial/commit/b375e5d02a8924f7367760a231f77ebab3cfb8e0))
+
 ## [0.2.0](https://github.com/lucasscariot/axial/compare/v0.1.2...v0.2.0) (2026-11-17)
 
 
