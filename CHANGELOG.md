@@ -31,6 +31,10 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 - `server.trust_iap_user: true` records the signed-in user that Identity-Aware Proxy reports
   on each dataset request, and shows it in Inspect and Query usage. Off by default and
   always off in `axial up`. It stores viewers' emails in history; see `axial guide config`.
+- `axial deploy` publishes a project on Cloud Run behind IAP, described by a new optional
+  `deploy:` section in `axial.yaml`. The config format stays at version **2**: existing
+  projects need no changes, and a project that adds `deploy:` should require this engine in
+  its `engine:` range.
 
 **History schema 2:** request history gains a `user_email` column. The engine adds it to
 SQLite and PostgreSQL history when it opens them; older rows have no user. After that,

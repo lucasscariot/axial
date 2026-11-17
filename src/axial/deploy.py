@@ -28,6 +28,7 @@ PLACEHOLDER_NUMBER = "PROJECT_NUMBER"
 @dataclass
 class Target:
     project: str
+    billing_project: str  # runs the queries; may differ from the project that hosts the service
     region: str
     service: str
     viewers: list[str]
@@ -61,8 +62,8 @@ def target(cfg: Config) -> Target:
         raise click.ClickException("deploy.service must be 6-30 lowercase letters, digits or hyphens, starting "
                                    "with a letter: it also names the service account")
     datasets = [d if "." in d else f"{cfg.billing_project}.{d}" for d in cfg.datasets]
-    return Target(project=project, region=cfg.deploy_region, service=cfg.deploy_service,
-                  viewers=list(cfg.deploy_viewers), datasets=datasets,
+    return Target(project=project, billing_project=cfg.billing_project, region=cfg.deploy_region,
+                  service=cfg.deploy_service, viewers=list(cfg.deploy_viewers), datasets=datasets,
                   record_viewers=cfg.deploy_record_viewers, location=cfg.location)
 
 
@@ -127,8 +128,9 @@ def deploy(cfg: Config, *, account: str | None = None, skip_build: bool = False,
 
         if not any(a["email"] == t.service_account for a in listed("iam", "service-accounts", "list")):
             gcloud("iam", "service-accounts", "create", t.service, f"--display-name={t.service} dashboards runtime")
-        gcloud("projects", "add-iam-policy-binding", t.project, f"--member=serviceAccount:{t.service_account}",
-               "--role=roles/bigquery.jobUser", "--condition=None", "--format=none")
+        # jobs are submitted in the billing project, which deploy.project may not be
+        gcloud("projects", "add-iam-policy-binding", t.billing_project,
+               f"--member=serviceAccount:{t.service_account}", "--role=roles/bigquery.jobUser", "--condition=None", "--format=none")
         click.echo(f"+ grant {t.service_account} READER on {', '.join(t.datasets)}")
         if not dry_run:
             grant(t, gcloud("auth", "print-access-token", capture=True, change=False))

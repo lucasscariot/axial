@@ -86,6 +86,18 @@ def test_deploy_runs_every_step_as_a_private_iap_service(project):
     assert viewers == ["--member=user:jane@example.com", "--member=group:ops@example.com"]
 
 
+def test_deploy_grants_job_access_on_the_billing_project(project):
+    gcloud = Gcloud()
+    cfg = load_config(project, environ={"AXIAL_DEPLOY_PROJECT": "hosting-project"})
+    dp.deploy(cfg, runner=gcloud, grant=lambda t, token: None)
+    sa = "ops-dashboards@hosting-project.iam.gserviceaccount.com"
+    binding, = gcloud.ran("projects", "add-iam-policy-binding")
+    assert binding[:4] == ["gcloud", "projects", "add-iam-policy-binding", "test-project"]
+    assert f"--member=serviceAccount:{sa}" in binding and "--role=roles/bigquery.jobUser" in binding
+    assert f"--service-account={sa}" in gcloud.ran("run", "deploy")[0]
+    assert all("--project=hosting-project" in c for c in gcloud.commands if c[0] == "gcloud")
+
+
 def test_deploy_reuses_what_exists_and_can_skip_the_build(project):
     gcloud = Gcloud(existing=True)
     cfg = load_config(project, environ={"AXIAL_DEPLOY_RECORD_VIEWERS": "true"})

@@ -35,7 +35,8 @@ It deploys one fixed shape and has no other options. Each step is safe to repeat
 
 1. Enables the Cloud Run, Cloud Build, Artifact Registry and IAP APIs.
 2. Creates the service account `<service>@<project>`, grants it `roles/bigquery.jobUser` on
-   the project and READER on each of `bigquery.datasets`. No key is created.
+   `bigquery.billing_project` (where its queries run, even when `deploy.project` hosts the
+   service elsewhere) and READER on each of `bigquery.datasets`. No key is created.
 3. Creates an Artifact Registry repository with immutable tags, and builds the image with
    Cloud Build, tagged with the Git commit. The working tree must be clean. Only the files
    `.dockerignore` allows are uploaded.
