@@ -91,6 +91,13 @@ extra runtime file, such as a logo or a DuckDB file. If `axial check` then repor
 `AXIAL_REF` outside `engine:`, change one of the two so they agree. Add `deploy:` to
 `axial.yaml` only if you use `axial deploy`.
 
+## [0.3.2](https://github.com/lucasscariot/axial/compare/v0.3.1...v0.3.2) (2026-11-17)
+
+
+### Features
+
+* **ui:** offer calendar periods in the date filter instead of rolling day counts ([#29](https://github.com/lucasscariot/axial/issues/29)) ([ebbad0c](https://github.com/lucasscariot/axial/commit/ebbad0c7febcd0a55c08952b931a8d826c5f9de1))
+
 ## [0.3.1](https://github.com/lucasscariot/axial/compare/v0.3.0...v0.3.1) (2026-11-17)
 
 
