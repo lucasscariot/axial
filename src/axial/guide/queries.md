@@ -47,6 +47,50 @@ ORDER BY day
   a `.yml` file, a file in a subfolder, or a `.sql` without its `.yaml`. It also rejects any
   key not shown above.
 
+## Sharing SQL between queries
+
+When several queries need the same SQL, such as a chain of CTEs, write it once in
+`snippets/<name>.sql` and include it with a line that holds only `{{ name }}`:
+
+```sql
+-- snippets/completed_orders.sql
+WITH completed AS (
+  SELECT order_id, DATE(created_at) AS day, amount
+  FROM `project.dataset.orders`
+  WHERE DATE(created_at) >= @start_date AND DATE(created_at) < @end_date
+    AND status = 'completed'
+)
+```
+
+```sql
+-- queries/orders_daily.sql
+{{ completed_orders }}
+SELECT day, COUNT(*) AS orders, SUM(amount) AS revenue
+FROM completed
+GROUP BY day
+ORDER BY day
+```
+
+The line is replaced by the file's text, exactly as written, before anything else reads the
+query. `axial check`, `dry-run`, the warehouse and the SQL version in Query usage all see the
+resulting SQL, so editing a snippet gives every query that includes it a new SQL version.
+`axial sql <query>` prints that SQL; warehouse error messages give line numbers in it.
+
+- Inclusion is the only feature. There are no arguments, variables, conditions or loops, and
+  `{{ }}` anywhere else in a query is an error. Values still go through `@params`.
+- A snippet may use `@params`. Each query that includes it must declare them under `params`,
+  as for its own SQL; `axial check` reports the ones that are missing. Shared params are
+  repeated in each query's YAML.
+- A snippet can be any run of whole lines: leading CTEs, CTEs that continue a `WITH`
+  (starting with `, name AS (`), or an expression such as a `CASE`. A query can include
+  several snippets, and the same one more than once.
+- Snippets cannot include other snippets. When queries need different parts of a long
+  fragment, split it into several snippets and list them in each query.
+- Keep `snippets/` flat, with `.sql` files named with letters, digits and underscores.
+  `axial check` reports an include with no file, a file that cannot be included, and (as a
+  warning) a snippet no query includes.
+- A snippet has no YAML file and is not a query: dashboards cannot refer to it.
+
 ## Fixtures
 
 `--fixture` serves `fixtures/<id>.json` for a query when that file exists, and otherwise

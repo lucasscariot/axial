@@ -8,6 +8,7 @@
 | `axial preview <dashboard> --fixture --screenshot out.png` | render with representative data |
 | `axial preview <dashboard> --fixture --pdf out.pdf` | A4 landscape PDF, as the app's Export PDF prints it |
 | `axial dry-run <query> [--start --end] [--json]` | byte estimate, est. cost, tables read |
+| `axial sql <query>` | the query's SQL as the warehouse receives it, with snippets included |
 | `axial tables [project.dataset] [--json]` | list datasets / tables (metadata only) |
 | `axial schema <project.dataset.table> [--json]` | columns, partitioning, clustering |
 | `axial usage [query] [--days N] [--json]` | recorded requests, jobs, cost, SQL versions |

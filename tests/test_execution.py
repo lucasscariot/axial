@@ -72,9 +72,12 @@ def test_usage_traces_cold_job_to_sql_version(client, wh, cfg):
                                               "filters": '{"start_date":"2026-11-01","end_date":"2026-11-08"}'}).json()
     assert insp["matches_selected_filters"]
     job = insp["job"]
-    sql = (cfg.queries_dir / "bookings_daily.sql").read_text()
-    assert job["sql_text"] == sql
-    assert job["sql_hash"] == Registry(cfg).queries["bookings_daily"].sql_hash
+    q = Registry(cfg).queries["bookings_daily"]
+    # history keeps the SQL the warehouse ran: the file with its snippet included
+    source = (cfg.queries_dir / "bookings_daily.sql").read_text()
+    snippet = (cfg.snippets_dir / "bookings_in_range.sql").read_text()
+    assert job["sql_text"] == q.sql == source.replace("{{ bookings_in_range }}\n", snippet)
+    assert job["sql_hash"] == q.sql_hash
     assert job["engine_version"]
     assert job["console_url"].endswith(f"j=bq:EU:{job['job_id']}&page=queryresults")
     assert job["exec_ms"] == 120 and job["queue_ms"] == 5

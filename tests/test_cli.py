@@ -45,7 +45,8 @@ def test_init_creates_a_project_that_checks_clean(tmp_path, monkeypatch):
     patterns = [line for line in (target / ".dockerignore").read_text().splitlines()
                 if line and not line.startswith("#")]
     assert patterns[0] == "*" and all(p.startswith("!") for p in patterns[1:])
-    assert {"!Dockerfile", "!axial.yaml", "!dashboards/*.yaml", "!queries/*.sql", "!queries/*.yaml"} <= set(patterns)
+    assert {"!Dockerfile", "!axial.yaml", "!dashboards/*.yaml", "!queries/*.sql", "!queries/*.yaml",
+            "!snippets/*.sql"} <= set(patterns)
     assert "COPY . /app" in dockerfile
     workflow = yaml.safe_load((target / ".github/workflows/check.yml").read_text())
     steps = " ".join(s.get("run", "") for s in workflow["jobs"]["check"]["steps"])

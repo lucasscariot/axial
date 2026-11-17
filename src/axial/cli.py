@@ -495,6 +495,20 @@ def bench(query_id, start, end, params, runs, as_json):
 
 @main.command()
 @click.argument("query_id")
+def sql(query_id):
+    """Print a saved query's SQL as the warehouse receives it, with snippets included (free)."""
+    _, reg = _project()
+    q = reg.queries.get(query_id)
+    if q is None:
+        for e in reg.errors:
+            if e.path.parent == reg.cfg.queries_dir and e.path.stem == query_id:
+                raise click.ClickException(str(e))
+        raise click.ClickException(f"no query {query_id!r} (known: {', '.join(sorted(reg.queries)) or 'none'})")
+    click.echo(q.sql, nl=not q.sql.endswith("\n"))
+
+
+@main.command()
+@click.argument("query_id")
 @click.option("--start", help="start_date (inclusive), default 7 days ago")
 @click.option("--end", help="end_date (exclusive), default tomorrow")
 @click.option("--param", "params", multiple=True, help="extra NAME=VALUE")

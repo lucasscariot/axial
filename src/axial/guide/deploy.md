@@ -75,8 +75,8 @@ docker run --rm -p 8080:8080 my-dashboards axial serve --fixture   # try it loca
   project's `engine:` range. The build fails if that ref does not install an `axial` command.
 - `APP_REVISION` sets `AXIAL_APP_REVISION`, which Axial records as each job's project
   commit. The image has no `.git`, so without it the commit is blank.
-- `.dockerignore` is an allowlist: only `axial.yaml`, `dashboards/*.yaml` and
-  `queries/*.sql|yaml` reach the image. History, `.git/`, fixtures, `.env` files and
+- `.dockerignore` is an allowlist: only `axial.yaml`, `dashboards/*.yaml`,
+  `queries/*.sql|yaml` and `snippets/*.sql` reach the image. History, `.git/`, fixtures, `.env` files and
   credentials cannot leak in. Add a `!` line for anything else the server needs, such as
   `!assets/` and `!assets/*` for `display.logo`, or a DuckDB file that must ship in the image.
   Without fixtures, `axial serve --fixture` in the image makes up rows from `columns`.

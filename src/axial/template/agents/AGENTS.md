@@ -1,16 +1,16 @@
 # Agent guide for this Axial project
 
-This project holds saved BigQuery SQL (`queries/`) and dashboard definitions (`dashboards/`).
-The axial engine renders them and owns all styling. You decide what goes on each page and
-how much space it gets.
+This project holds saved BigQuery SQL (`queries/`, with shared SQL in `snippets/`) and
+dashboard definitions (`dashboards/`). The axial engine renders them and owns all styling.
+You decide what goes on each page and how much space it gets.
 
 **Read `CONTEXT.md` first.** It holds this project's trusted tables, metric definitions and
 conventions, and it overrides anything generic here.
 
 ## Rules
 
-- **Free commands:** `check`, `preview --fixture`, `dry-run`, `tables`, `schema`, `usage`
-  and `guide`. Use them freely.
+- **Free commands:** `check`, `preview --fixture`, `dry-run`, `sql`, `tables`, `schema`,
+  `usage` and `guide`. Use them freely.
 - **Billed commands:** `run`, `bench` and live dashboard loads run billed BigQuery jobs.
   `dry-run` first. If the estimate is above $1, or you'd run more than a handful of jobs,
   ask before running.
@@ -18,6 +18,9 @@ conventions, and it overrides anything generic here.
   when the user asks; `deploy --dry-run` is free and changes nothing.
 - **SQL:** one read-only `SELECT`/`WITH` per query, with `@params`. `end_date` is exclusive.
   Compute rates in SQL over the whole period, never by averaging.
+- **Shared SQL:** when queries need the same CTEs or expression, put them in
+  `snippets/<name>.sql` and include them with a `{{ name }}` line. Don't copy SQL between
+  queries and don't write scripts that generate query files (`axial guide queries`).
 - **Output:** pass `--json` to `check`, `dry-run`, `tables`, `schema`, `usage`, `run` and
   `bench`, then parse the result rather than reading text.
 - **Done means:**
