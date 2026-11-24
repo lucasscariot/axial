@@ -145,8 +145,9 @@ filters:
 
 - `param` is the query param the filter sets. `label` names the dropdown (default: the
   param, humanized). `query` is the saved query that lists the choices, and `column` the
-  STRING column they are read from: its distinct non-null values, in the order the rows
-  arrive, so end that SQL with an `ORDER BY`.
+  STRING column they are read from: its distinct values, in the order the rows arrive, so
+  end that SQL with an `ORDER BY`. NULL and empty strings are not offered, because an empty
+  value is what All sends.
 - The first choice is **All**, which sends no value, so each query's default for the param
   applies. Declare the param as `{type: STRING, default: null}` and write
   `(@region IS NULL OR region = @region)` so All keeps every row (see `axial guide queries`).
