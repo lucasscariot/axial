@@ -118,6 +118,14 @@ extra runtime file, such as a logo or a DuckDB file. If `axial check` then repor
 `AXIAL_REF` outside `engine:`, change one of the two so they agree. Add `deploy:` to
 `axial.yaml` only if you use `axial deploy`.
 
+## [0.3.3](https://github.com/lucasscariot/axial/compare/v0.3.2...v0.3.3) (2026-11-24)
+
+
+### Features
+
+* **charts:** add time axis, facets, lanes, highlights and steps ([#32](https://github.com/lucasscariot/axial/issues/32)) ([722f6f1](https://github.com/lucasscariot/axial/commit/722f6f14a28def4dcc96538f17e682709dcc975a))
+* **dashboards:** add select filters and previous/next period arrows ([#33](https://github.com/lucasscariot/axial/issues/33)) ([d951486](https://github.com/lucasscariot/axial/commit/d9514863e2dd2e76dd0c42847cedf1918114a73d))
+
 ## [0.3.2](https://github.com/lucasscariot/axial/compare/v0.3.1...v0.3.2) (2026-11-17)
 
 
