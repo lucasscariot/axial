@@ -168,3 +168,57 @@ def test_time_series_options_are_checked(repo):
         "unknown key 'step' for a bar tile")
     assert found("{type: table, query: service_readings, facet: service}")[0].startswith(
         "unknown key 'facet' for a table tile")
+
+
+def test_select_filters_are_checked(repo):
+    def found(filters: str, tiles: str = "{type: table, query: region_bookings}") -> list[str]:
+        (repo / "dashboards" / "regional_bookings.yaml").write_text(
+            f"title: x\ndate_range: {{default_days: 7, max_days: 31}}\nfilters:\n{filters}\ntiles:\n  - {tiles}\n")
+        issues = run_checks(Registry(load_config(repo, environ={})), "regional_bookings")
+        return [f"{i.level} {i.message}" for i in issues if i.where.startswith("dashboards/regional_bookings filter")]
+
+    ok = "  - {param: region, query: regions, column: region}"
+    assert found(ok) == []
+    assert found(ok + "\n  - {param: channel, label: Sales channel, query: channels, column: channel}") == []
+    assert found("  - {param: region, query: regions, column: region, multiple: true}") == [
+        "error unknown key 'multiple' (use one of column, label, param, query)"]
+    assert found("  - {query: regions, column: region}") == ["error param is required: the query param this filter sets"]
+    assert found("  - {param: region}") == ["error query is required: the saved query that lists the choices"]
+    assert found("  - {param: region, query: nope, column: region}")[0].startswith(
+        "error query 'nope' does not exist (known: ")
+    assert found("  - {param: region, query: regions}") == ["error column is required: the column of the choices"]
+    assert found("  - {param: region, query: regions, column: name}") == [
+        "error column: 'name' is not in query regions columns (region)"]
+    assert found("  - {param: region, query: bookings_daily, column: bookings}") == [
+        "error column: 'bookings' is INT64, expected STRING; CAST it in the SQL"]
+    assert found(ok + "\n" + ok) == ["error another filter already sets param region; give each filter its own param"]
+    assert found("  - {param: start_date, query: regions, column: region}") == [
+        "error param start_date is bound to the date filter; a select filter needs another param"]
+    assert found("  - {param: print, query: regions, column: region}") == [
+        "error param print is reserved by the dashboard URL (end, print, start); rename the param"]
+    assert found("  - {param: site, query: regions, column: region}") == [
+        "error no query on this dashboard declares param site, so the filter would change nothing"]
+    # a query that does not declare the param ignores the filter: one warning per filter
+    assert found(ok, "{type: table, query: region_bookings}\n  - {type: table, query: bookings_daily}") == [
+        "warning bookings_daily has no region param; their tiles ignore the Region filter"]
+    # the options query cannot itself be filtered: filters are independent
+    assert found("  - {param: region, query: region_bookings, column: region}") == [
+        "error query region_bookings lists the choices, so it cannot take filter param region: filters are independent"]
+    q = repo / "queries" / "region_bookings.yaml"
+    q.write_text(q.read_text().replace("region: {type: STRING, default: null}", "region: INT64"))
+    assert found(ok) == [
+        "error query region_bookings: param region is bound to this filter but has type INT64; use STRING",
+        "error query region_bookings: param region is bound to this filter but has no default; give it one "
+        "(usually `default: null`, with SQL like `@region IS NULL OR ... = @region`) so All works"]
+    # and the generic "required param is not bound" error does not repeat it
+    assert not [e for e in errors(repo, "regional_bookings") if "required param region" in e]
+
+
+def test_filter_options_queries_are_checked_with_the_dashboard(repo):
+    """A query that only lists a filter's choices is still validated, and may take the dates."""
+    (repo / "queries" / "channels.sql").write_text("SELECT channel FROM `analytics.dim_channels` WHERE x = @nope")
+    assert "queries/channels: SQL uses @nope but it is not declared under params" in [
+        f"{e.split(': ', 1)[0]}: {e.split(': ', 1)[1]}" for e in errors(repo, "regional_bookings")]
+    # no "ignores the date filter" warning for it: it is not a tile
+    issues = run_checks(Registry(load_config(repo, environ={})), "regional_bookings")
+    assert not [i for i in issues if "ignore the date filter" in i.message]

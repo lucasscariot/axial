@@ -39,3 +39,6 @@ export const IconSort = ({ dir, ...p }: SVGProps<SVGSVGElement> & { dir: 1 | -1 
     {dir <= 0 && <path d="m5 9.5 3 3 3-3" opacity={dir === -1 ? 1 : 0.35} />}
   </svg>
 );
+export const IconChevron = ({ dir, ...p }: SVGProps<SVGSVGElement> & { dir: "left" | "right" | "down" }) => (
+  <svg {...base(p)}><path d={dir === "left" ? "m9.75 4-4 4 4 4" : dir === "right" ? "m6.25 4 4 4-4 4" : "m4.5 6.25 3.5 3.5 3.5-3.5"} /></svg>
+);

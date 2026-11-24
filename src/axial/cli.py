@@ -12,6 +12,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlencode
 
 import click
 
@@ -343,7 +344,9 @@ def check(dashboard, as_json):
 @click.option("--width", default=1440, show_default=True, help="viewport width for --screenshot")
 @click.option("--start", help="start_date for the screenshot or PDF")
 @click.option("--end", help="end_date (exclusive) for the screenshot or PDF")
-def preview(dashboard, fixture, port, screenshot, pdf, width, start, end):
+@click.option("--filter", "filters", multiple=True, metavar="PARAM=VALUE",
+              help="select a value in one of the dashboard's filters, e.g. region=North")
+def preview(dashboard, fixture, port, screenshot, pdf, width, start, end, filters):
     """Render one dashboard, optionally to a PNG or a PDF to share."""
     if screenshot and pdf:
         raise click.UsageError("pass --screenshot or --pdf, not both")
@@ -351,6 +354,12 @@ def preview(dashboard, fixture, port, screenshot, pdf, width, start, end):
     _print_issues(run_checks(reg, dashboard))
     if dashboard not in reg.dashboards:
         sys.exit(1)
+    known = reg.dashboards[dashboard].filter_params
+    selected = [kv.partition("=") for kv in filters]
+    for k, eq, v in selected:
+        if k not in known or not eq or not v:
+            raise click.UsageError(f"--filter {k}{eq}{v}: expected PARAM=VALUE with PARAM one of this dashboard's "
+                                   f"filters ({', '.join(sorted(known)) or 'none'})")
     out = screenshot or pdf
     if out:
         try:
@@ -359,8 +368,9 @@ def preview(dashboard, fixture, port, screenshot, pdf, width, start, end):
             raise click.ClickException("screenshots and PDFs need playwright: install axial with the [screenshot] "
                                        "extra, then run `playwright install chromium`") from None
     server = _server(cfg, fixture, port or _free_port(cfg.port + 1))
-    params = [(k, v) for k, v in (("start", start), ("end", end), ("print", "1" if pdf else None)) if v]
-    qs = "&".join(f"{k}={v}" for k, v in params)
+    params = [(k, v) for k, v in (("start", start), ("end", end), *((k, v) for k, _, v in selected),
+                                  ("print", "1" if pdf else None)) if v]
+    qs = urlencode(params)
     url = f"http://127.0.0.1:{server.config.port}/d/{dashboard}" + (f"?{qs}" if qs else "")
     if not out:
         click.echo(url)

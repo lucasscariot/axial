@@ -29,6 +29,8 @@ export type DashboardDef = {
     default_start: string; default_end: string; max_days: number; start_param: string; end_param: string;
     presets: { id: string; label: string; start: string; end: string }[]; // calendar periods; end exclusive
   } | null;
+  // select filters: each sets one param; its choices are the values of `column` in `query`'s rows
+  filters: { param: string; label: string; query: string; column: string }[];
   tiles: Tile[]; queries: Record<string, QueryMeta>; errors: string[];
 };
 

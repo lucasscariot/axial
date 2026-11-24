@@ -150,7 +150,8 @@ The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar
 `table` and markdown `text`. Line and bar tiles plot `TIMESTAMP` and `DATETIME` columns on a
 time axis, and for time-series review can draw one small panel per entity (`facet`), one lane
 per measure (`lanes`), shaded periods where a condition held (`highlight`) and held values as
-steps (`step`). `axial guide dashboards` has the full reference.
+steps (`step`). Dropdown `filters` set a STRING param from a list of choices read from a
+query, and kept in the page URL. `axial guide dashboards` has the full reference.
 
 Queries that need the same SQL share it as a snippet: a `{{ name }}` line in a query is
 replaced by `snippets/<name>.sql`. That is the whole mechanism; `axial guide queries` has the
@@ -173,6 +174,7 @@ rules.
 | Measure a change, caches bypassed (billed) | `axial bench <query> --start … --end …` |
 | Screenshot a dashboard | `axial preview <dashboard> --fixture --screenshot out.png` |
 | Save a dashboard as a PDF to share | **Export PDF** in the app, or `axial preview <dashboard> --pdf out.pdf` |
+| Preview with a filter value selected | `axial preview <dashboard> --fixture --filter region=North` |
 | Read the reference for your version | `axial guide [queries\|dashboards\|config\|cli\|deploy\|migration]` |
 | Refresh agent files after an upgrade | `axial agents sync` |
 

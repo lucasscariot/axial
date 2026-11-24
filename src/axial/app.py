@@ -134,8 +134,10 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
         issues = [i for i in run_checks(registry, d.id) if i.level == "error"]
         return {
             "id": d.id, "title": d.title, "description": d.description, "date_range": dr,
+            "filters": [{"param": f.param, "label": f.label, "query": f.query, "column": f.column} for f in d.filters],
             "tiles": [{**t.raw, "type": t.type, "query": t.query, "span": t.span} for t in d.tiles],
-            "queries": {q: registry.queries[q].meta() for q in d.query_ids if q in registry.queries},
+            "queries": {q: registry.queries[q].meta() for q in d.query_ids + d.option_query_ids
+                        if q in registry.queries},
             "errors": [str(i) for i in issues],
         }
 
@@ -144,12 +146,13 @@ def create_app(cfg: Config, *, mode: str = "live", warehouse=None, store: Histor
     @app.post("/api/datasets")
     async def dataset(req: DatasetRequest, request: Request):
         d = dashboard(req.dashboard_id)
-        if req.query_id not in d.query_ids:
+        # a tile's query, or the query a select filter reads its choices from
+        if req.query_id not in d.query_ids + d.option_query_ids:
             raise HTTPException(400, f"query {req.query_id!r} is not on dashboard {d.id!r}")
         q = registry.queries.get(req.query_id)
         if q is None:
             raise HTTPException(404, f"no query {req.query_id!r}")
-        allowed = {d.date_range.start_param, d.date_range.end_param} if d.date_range else set()
+        allowed = ({d.date_range.start_param, d.date_range.end_param} if d.date_range else set()) | d.filter_params
         extra = set(req.filters) - allowed
         if extra:
             raise HTTPException(400, f"unknown filters: {', '.join(sorted(extra))}")

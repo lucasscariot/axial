@@ -1,0 +1,13 @@
+title: Regional bookings
+description: Bookings per region, filtered by region and sales channel.
+date_range: {default: last_week, max_days: 31}
+filters:
+  - {param: region, label: Region, query: regions, column: region}
+  - {param: channel, query: channels, column: channel}   # label defaults to "Channel"
+tiles:
+  - {type: kpi, query: region_bookings, value: bookings, reduce: sum, span: 4}
+  - {type: kpi, query: region_bookings, value: gross_value, reduce: sum, title: Gross booking value, span: 4}
+  - {type: kpi, query: region_bookings, value: bookings, reduce: max, title: Most bookings in a region-day, span: 4}
+  - {type: line, query: region_bookings, x: day, y: bookings, series: region, span: 8}
+  - {type: bar, query: region_bookings, x: day, y: gross_value, series: region, title: Gross value by day, span: 4}
+  - {type: table, query: region_bookings, span: 12}

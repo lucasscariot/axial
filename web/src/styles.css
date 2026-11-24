@@ -174,6 +174,27 @@ button.link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .date-range input::-webkit-calendar-picker-indicator { opacity: 0.45; cursor: pointer; }
 .date-range input::-webkit-calendar-picker-indicator:hover { opacity: 0.9; }
 .date-arrow { color: var(--text-3); font-size: 12px; padding: 0 2px; }
+.date-fields { display: inline-flex; align-items: center; }
+.date-range .icon-btn:disabled { opacity: 0.35; cursor: default; background: transparent; color: var(--text-2); }
+
+/* Select filters: a label and a native select in one hairline box, the size of the date range. */
+.select-filter {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 0 0 10px; min-width: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); box-shadow: var(--shadow-sm);
+  font-size: 13px; cursor: pointer;
+}
+.select-filter:hover, .select-filter:focus-within { border-color: var(--border-strong); }
+.select-filter:has(select:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.select-filter-label { color: var(--text-3); white-space: nowrap; }
+.select-filter select {
+  appearance: none; -webkit-appearance: none; min-width: 0; max-width: 220px; height: 32px; padding: 0 28px 0 0;
+  border: 0; outline: 0; background: transparent; color: var(--text-2); font: 500 13px var(--font-sans);
+  text-overflow: ellipsis; cursor: pointer;
+}
+.select-filter select option { background: var(--card); color: var(--text-1); }
+.select-filter.on select { color: var(--text-1); }
+.select-filter.stale select { color: var(--amber-fg); }
+.select-filter-chevron { position: absolute; right: 8px; width: 14px; height: 14px; color: var(--text-3); pointer-events: none; }
 
 .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -210,7 +231,11 @@ td .badge, .card-head .badge { margin-left: 8px; }
 .crumb-sep { margin: 0 10px; color: var(--border-strong); font-weight: 300; }
 .skeleton-line { width: 280px; height: 32px; border-radius: 8px; background: var(--muted-bg); animation: pulse 1.6s ease-in-out infinite; }
 
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; }
+/* Dates and filters wrap inside .toolbar-main, the filters as one group, so the actions keep the top right. */
+.toolbar { display: flex; align-items: flex-start; gap: 8px 16px; margin-bottom: 20px; }
+.toolbar-main, .toolbar-filters, .toolbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.toolbar-main { flex: 1 1 0; }
+.toolbar-actions { flex: none; margin-left: auto; }
 
 /* ---------- dashboard grid & tiles ---------- */
 .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
@@ -382,11 +407,17 @@ pre.sql {
 
 /* ---------- responsive ---------- */
 @media (max-width: 960px) {
+  .toolbar { flex-wrap: wrap; }
+  .toolbar-main { flex-basis: 100%; }
   .grid > .tile, .grid > .note { grid-column: span 12 !important; }
   .grid > .tile-kpi { grid-column: span 6 !important; }
 }
 @media (max-width: 720px) {
   .page { padding: 20px 16px 48px; }
+  /* the date fields and each filter take a full row; their boxes stretch to the edge */
+  .toolbar .date-range, .toolbar-filters, .toolbar .select-filter { flex: 1 1 100%; }
+  .date-fields { flex: 1; justify-content: center; }
+  .select-filter select { flex: 1; max-width: none; }
   .topnav-inner { padding: 0 16px; }
   .nav-meta { display: none; }
   .page-title { font-size: 24px; }

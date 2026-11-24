@@ -448,3 +448,52 @@ def test_fixture_mode_draws_readings_for_time_series_tiles(cfg):
     rates = [r["error_rate"] for r in rows]
     lone = [i for i in range(1, len(rates) - 1) if rates[i] is not None and rates[i - 1] is None and rates[i + 1] is None]
     assert rates.count(None) > 10 and lone
+
+
+def test_select_filters_bind_their_param_and_key_the_cache(client, wh):
+    d = client.get("/api/dashboards/regional_bookings").json()
+    assert d["filters"] == [{"param": "region", "label": "Region", "query": "regions", "column": "region"},
+                            {"param": "channel", "label": "Channel", "query": "channels", "column": "channel"}]
+    assert {"regions", "channels", "region_bookings"} <= set(d["queries"])  # option queries are described too
+
+    def get(query, **extra):
+        r = client.post("/api/datasets", json={"dashboard_id": "regional_bookings", "query_id": query,
+                                               "filters": {**FILTERS, **extra}})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def params(query):
+        return [dict((n, v) for n, _t, v in s["params"]) for s in wh.submitted if s["labels"]["query_id"] == query]
+
+    # All: no value, so the query's null default binds as a typed NULL
+    assert get("region_bookings")["params"]["region"] is None
+    job = next(s for s in wh.submitted if s["labels"]["query_id"] == "region_bookings")
+    assert ("region", "STRING", None) in job["params"] and ("channel", "STRING", None) in job["params"]
+    assert get("region_bookings", region=None)["source"] == "app_cache"  # null is All, the same request
+    # a value is bound as a param, never written into the SQL, and is its own cache entry
+    assert get("region_bookings", region="North")["source"] == "bigquery"
+    assert get("region_bookings", region="North")["source"] == "app_cache"
+    assert get("region_bookings", region="South", channel="Online")["source"] == "bigquery"
+    assert [p["region"] for p in params("region_bookings")] == [None, "North", "South"]
+    assert params("region_bookings")[-1]["channel"] == "Online"
+    assert all("North" not in s["sql"] for s in wh.submitted)
+    # the choices' query is served for this dashboard although no tile reads it; it takes the dates
+    get("channels")
+    assert get("regions")["params"] == {"start_date": "2026-11-01", "end_date": "2026-11-08"}
+    # a filter is ignored by queries that do not declare its param, as the date filter is
+    assert get("regions", region="North")["source"] == "app_cache"
+
+
+def test_select_filter_values_are_validated(client, wh):
+    def post(dashboard, query, **filters):
+        return client.post("/api/datasets", json={"dashboard_id": dashboard, "query_id": query,
+                                                  "filters": {**FILTERS, **filters}})
+
+    # only this dashboard's filters are accepted, and its option queries are not on other dashboards
+    assert post("booking_ops", "bookings_daily", region="North").json()["detail"] == "unknown filters: region"
+    assert post("booking_ops", "regions").json()["detail"] == "query 'regions' is not on dashboard 'booking_ops'"
+    assert post("regional_bookings", "region_bookings", site="A").json()["detail"] == "unknown filters: site"
+    r = post("regional_bookings", "region_bookings", region="x" * 1025)
+    assert r.status_code == 400 and "longer than 1024" in r.text
+    assert post("regional_bookings", "region_bookings", region=["North"]).status_code == 400
+    assert not wh.submitted
