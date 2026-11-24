@@ -27,10 +27,13 @@ PARAM_KEYS = {"type", "default"}
 DASHBOARD_KEYS = {"title", "description", "date_range", "tiles"}
 DATE_RANGE_KEYS = {"default", "default_days", "max_days", "start_param", "end_param"}
 COMMON_TILE_KEYS = {"type", "query", "span", "title", "height"}
+# Options of line and bar tiles for time series: small multiples, lanes and shaded periods.
+CHART_KEYS = {"x", "y", "series", "format", "facet", "facet_columns", "lanes", "highlight"}
+TIME_TYPES = {"TIMESTAMP", "DATETIME"}  # an x column of these types is plotted on a time axis
 TILE_KEYS = {
     "kpi": {"value", "reduce", "format"},
-    "line": {"x", "y", "series", "format"},
-    "bar": {"x", "y", "series", "format"},
+    "line": CHART_KEYS | {"step"},
+    "bar": CHART_KEYS,
     "funnel": {"x", "y", "format"},
     "table": {"columns", "formats"},
     "text": {"markdown"},

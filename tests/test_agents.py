@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from axial import agents as ag
 from axial.cli import GUIDE_DIR, main
-from axial.registry import FORMATS, REDUCERS, TILE_TYPES
+from axial.registry import COMMON_TILE_KEYS, FORMATS, REDUCERS, TILE_KEYS, TILE_TYPES
 
 from .conftest import FakeWarehouse
 
@@ -102,6 +102,8 @@ def test_guide_documents_every_tile_type_format_and_reducer():
         assert f"`{r}`" in dashboards, r
     for f in FORMATS:
         assert f"`{f}`" in queries, f
+    for k in COMMON_TILE_KEYS.union(*TILE_KEYS.values()):
+        assert f"`{k}`" in dashboards, f"dashboards guide misses tile key {k}"
     assert run("guide", "nope").exit_code == 1
 
 

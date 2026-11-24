@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart } from "echarts/charts";
+import { BarChart, LineChart, ScatterChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { QueryMeta, Row, Tile } from "../api";
 import { defaultFormat, fmt, labelOf } from "../format";
 
-echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
+echarts.use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
 
-const MAX_SERIES = 8;
+export const MAX_SERIES = 8;
 
 export function cssVar(el: Element, name: string) {
   return getComputedStyle(el).getPropertyValue(name).trim();
@@ -36,9 +36,35 @@ export const fontsReady: Promise<unknown> = Promise.race([
 export const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function withAlpha(hex: string, a: number) {
+export function withAlpha(hex: string, a: number) {
   const n = parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+const DURATION_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400];
+
+/** A y scale from 0 (or below) with about four round steps. Durations (seconds) step by
+ *  natural units: 1–30 s, 1–30 min, 1–12 h, then whole days; counts by whole numbers. */
+export function niceScale(lo: number, hi: number, format: string) {
+  lo = Math.min(0, lo); hi = Math.max(0, hi);
+  if (!(hi > lo)) hi = lo + 1;
+  const raw = (hi - lo) / 4, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
+  let step: number;
+  if (format === "duration") {
+    const days = raw / 86400, dmag = 10 ** Math.max(0, Math.floor(Math.log10(days))), df = days / dmag;
+    step = DURATION_STEPS.find((d) => d >= raw) ?? (df <= 1 ? 1 : df <= 2 ? 2 : df <= 5 ? 5 : 10) * dmag * 86400;
+  } else {
+    const whole = format === "integer"; // counts step by whole numbers, never 2.5
+    step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 && !whole ? 2.5 : f <= 5 ? 5 : 10) * mag;
+    if (whole && step < 1) step = 1;
+  }
+  const round = (v: number) => Number(v.toPrecision(12));
+  return { min: round(Math.floor(lo / step + 1e-9) * step), max: round(Math.ceil(hi / step - 1e-9) * step), step };
+}
+
+/** Which values a line cannot connect to anything: no non-null value right before or after. */
+export function isolated(values: (number | null)[]) {
+  return values.map((v, i) => v !== null && (values[i - 1] ?? null) === null && (values[i + 1] ?? null) === null);
 }
 
 export function buildSeries(tile: Tile, rows: Row[]) {
@@ -97,9 +123,15 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
     const border = cssVar(el, "--border");
     const font = cssVar(el, "--font-sans");
     const few = xs.length <= 2;
+    // a duration axis steps by whole seconds, minutes, hours or days, never 3m 20s
+    let durationScale = {};
+    if (yFmt === "duration") {
+      const shown = series.filter((s) => !multi || hidden[s.name] !== true).flatMap((s) => s.data).filter((v): v is number => v !== null);
+      if (shown.length) { const sc = niceScale(Math.min(...shown), Math.max(...shown), "duration"); durationScale = { min: sc.min, max: sc.max, interval: sc.step }; }
+    }
 
     const tooltipHtml = (params: any) => {
-      const list = Array.isArray(params) ? params : [params];
+      const list = (Array.isArray(params) ? params : [params]).filter((p: any) => p.seriesType !== "scatter");
       if (!list.length) return "";
       const head = `<div class="tt-head">${esc(fmt(xs[list[0].dataIndex], xFmt))}</div>`;
       const rowsHtml = list.map((p: any) =>
@@ -133,11 +165,11 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
         axisLabel: { color: text3, fontFamily: font, fontSize: 11, margin: 10, hideOverlap: true, formatter: (v: string) => fmt(v, xFmt, true) },
       },
       yAxis: {
-        type: "value", splitNumber: 4,
+        type: "value", splitNumber: 4, ...durationScale,
         splitLine: { lineStyle: { color: grid, width: 1 } },
         axisLabel: { color: text3, fontFamily: font, fontSize: 11, margin: 10, formatter: (v: number) => fmt(v, yFmt, true) },
       },
-      series: series.map((s, i) => isBar
+      series: [...series.map((s, i) => isBar
         ? { type: "bar", name: s.name, data: s.data, barMaxWidth: 24, barGap: "12%", barCategoryGap: "32%",
             itemStyle: { borderRadius: [4, 4, 0, 0] }, emphasis: { itemStyle: { opacity: 0.85 } } }
         : { type: "line", name: s.name, data: s.data, connectNulls: false,
@@ -148,7 +180,12 @@ export function ChartTile({ tile, query, rows, height }: { tile: Tile; query: Qu
             ...(multi ? {} : {
               areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
                 { offset: 0, color: withAlpha(colors[i], 0.12) }, { offset: 1, color: withAlpha(colors[i], 0) }]) },
-            }) }),
+            }) }), ...(isBar || few ? [] : series.map((s, i) => {
+              // A value with no neighbour to connect to draws no line; give it a dot so it is not lost.
+              const lone = isolated(s.data);
+              return { type: "scatter", name: s.name, data: s.data.map((v, j) => (lone[j] ? v : null)), silent: true, z: 3,
+                symbolSize: 6, itemStyle: { color: colors[i] } };
+            }))],
     }, true);
   };
 

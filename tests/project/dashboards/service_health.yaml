@@ -1,0 +1,20 @@
+title: Service health
+description: Time-series review of each service and site, with incident and heating periods shaded.
+date_range: {default_days: 3, max_days: 31}
+tiles:
+  - type: line
+    query: service_readings
+    title: Error rate and replicas per service
+    x: read_at
+    y: [error_rate, replicas]
+    facet: service
+    facet_columns: 2
+    lanes: true
+    highlight: incident
+    step: replicas
+    span: 12
+  - {type: line, query: site_readings, x: read_at, y: [temperature, pressure], lanes: true, facet: site,
+     facet_columns: 4, highlight: heating, title: Temperature and pressure per site, span: 12}
+  - {type: line, query: service_readings, x: read_at, y: latency, series: service, title: Latency, span: 6}
+  - {type: bar, query: site_readings, x: read_at, y: pressure, facet: site, facet_columns: 2, height: 90,
+     title: Pressure per site, span: 6}

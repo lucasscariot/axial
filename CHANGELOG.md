@@ -23,6 +23,18 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 
 ### Features
 
+- Line and bar tiles for time-series review. An `x` column of type `TIMESTAMP` or `DATETIME`
+  is plotted on a time axis at each row's instant (a `DATETIME` exactly as written, a
+  `TIMESTAMP` in the viewer's local time), spanning the selected dates when the dashboard has
+  a date filter. Five optional tile keys: `facet: <column>` draws one panel per value with
+  shared scales and a shared crosshair (`facet_columns` 1–4 lays them out, `height` is then
+  per panel, at most 50 panels), `lanes: true` gives each `y` column its own lane and y
+  scale, `highlight: <BOOL column>` shades the runs where it is true, and `step` (line tiles)
+  draws values that are set and held as steps. `axial check` validates them, and fixture mode
+  synthesizes ordered readings per facet value for these tiles. Existing dashboards need no
+  change; a tile with a `DATE` or other `x` keeps its category axis, while a chart that
+  already used a `TIMESTAMP` or `DATETIME` `x` now spaces points by time. A project that
+  uses the new keys should require this engine in its `engine:` range.
 - The dashboard date filter offers calendar periods (Today, This week, Last week, Month to
   date, Last month, Quarter to date, Year to date) in place of the rolling `7d`, `14d` and
   `28d` buttons. Weeks start on Monday. `date_range.default` opens a dashboard on one of
@@ -59,6 +71,9 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 
 ### Bug Fixes
 
+- Line and bar charts with a `duration` axis step by whole time units (30 s, 5 min, 2 h, 1 day)
+  instead of splits such as 3m 20s. A line value with nulls on both sides is drawn as a dot;
+  it used to disappear.
 - Fixture mode makes up a single row for a query that a KPI tile reads with `reduce: single`.
   It used to make up 25 rows, or one per day, whenever such a query also returned a label or
   a date, so the tile showed "Expected 1 row" unless the project saved a fixture for it.

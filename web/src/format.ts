@@ -71,6 +71,35 @@ export function fmt(v: unknown, format: string, compact = false): string {
   }
 }
 
+const ISO = /^(\d{4})-(\d\d)-(\d\d)(?:[T ](\d\d):(\d\d)(?::(\d\d)(?:\.(\d{1,3}))?)?)?/;
+
+/** Milliseconds for a TIMESTAMP (an instant) or a DATETIME (`civil`: wall-clock time, read as UTC
+ *  and always shown in UTC, so 09:00 stays 09:00 for every viewer). */
+export function toMs(v: unknown, civil: boolean): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const s = String(v);
+  if (civil) {
+    const m = ISO.exec(s);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0), +(m[7] ?? "0").padEnd(3, "0")) : null;
+  }
+  const t = Date.parse(s.length === 10 ? s + "T00:00:00" : s.replace(" ", "T"));
+  return Number.isNaN(t) ? null : t;
+}
+
+/** A time on a chart: `axis` gives the day at midnight and the time otherwise; `full` both. */
+export function fmtTime(ms: number, civil: boolean, mode: "axis" | "full"): string {
+  const d = new Date(ms);
+  const timeZone = civil ? "UTC" : undefined;
+  const [h, m, s] = civil ? [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()] : [d.getHours(), d.getMinutes(), d.getSeconds()];
+  const loc = display.locale;
+  if (mode === "axis") {
+    return h === 0 && m === 0 ? d.toLocaleDateString(loc, { day: "numeric", month: "short", timeZone })
+      : d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", timeZone });
+  }
+  return d.toLocaleString(loc, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+    ...(s ? { second: "2-digit" } : {}), timeZone });
+}
+
 export function bytes(n: number | null | undefined): string {
   if (n === null || n === undefined) return "–";
   const u = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
