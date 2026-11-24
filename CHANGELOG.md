@@ -35,6 +35,18 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
   change; a tile with a `DATE` or other `x` keeps its category axis, while a chart that
   already used a `TIMESTAMP` or `DATETIME` `x` now spaces points by time. A project that
   uses the new keys should require this engine in its `engine:` range.
+- Dashboard select filters. A new optional dashboard key, `filters`, adds dropdowns to the
+  toolbar: `{param: region, label: Region, query: regions, column: region}` sets the STRING
+  param `region` of every tile query that declares it, choosing from the distinct values of
+  `column` in a saved query's rows (which may take the dates). **All** sends no value, so a
+  param declared `{type: STRING, default: null}` binds SQL NULL. The selection lives in the
+  page URL, is part of each query's cache key and is printed in the PDF header.
+  `axial check` validates filters, and `axial preview --filter PARAM=VALUE` selects a value.
+  Existing dashboards need no change; a project that adds `filters` should require this
+  engine in its `engine:` range.
+- Previous and next arrows beside the date fields move the selected range by its own length,
+  by whole calendar months for a range of months, and from a period to date to the whole
+  period before it. Next stops at today.
 - The dashboard date filter offers calendar periods (Today, This week, Last week, Month to
   date, Last month, Quarter to date, Year to date) in place of the rolling `7d`, `14d` and
   `28d` buttons. Weeks start on Monday. `date_range.default` opens a dashboard on one of

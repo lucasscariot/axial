@@ -7,6 +7,7 @@
 | `axial check [dashboard] [--json]` | validate config keys, queries, dashboards and fixtures |
 | `axial preview <dashboard> --fixture --screenshot out.png` | render with representative data |
 | `axial preview <dashboard> --fixture --pdf out.pdf` | A4 landscape PDF, as the app's Export PDF prints it |
+| `axial preview <dashboard> --filter region=North` | open or render it with a filter value selected (repeatable) |
 | `axial dry-run <query> [--start --end] [--json]` | byte estimate, est. cost, tables read |
 | `axial sql <query>` | the query's SQL as the warehouse receives it, with snippets included |
 | `axial tables [project.dataset] [--json]` | list datasets / tables (metadata only) |

@@ -7,6 +7,7 @@ from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
 from axial.app import create_app
+from axial.checks import run_checks
 from axial.cli import main
 from axial.config import ConfigError, load_config
 from axial.duck import DuckDBWarehouse, to_duckdb_sql
@@ -30,7 +31,9 @@ def db(tmp_path):
     path.parent.mkdir()
     con = duckdb.connect(str(path))
     con.execute("CREATE TABLE bookings AS SELECT DATE '2026-11-01' + (i % 10)::INT AS day, i::DOUBLE AS amount, "
-                "CASE WHEN i % 7 = 0 THEN 'cancelled' ELSE 'ok' END AS status FROM range(100) t(i)")
+                "CASE WHEN i % 7 = 0 THEN 'cancelled' ELSE 'ok' END AS status, "
+                "CASE WHEN i % 4 = 0 THEN 'North' WHEN i % 4 = 1 THEN 'South' ELSE NULL END AS region "
+                "FROM range(100) t(i)")
     con.execute("CREATE VIEW bookings_ok AS SELECT * FROM bookings WHERE status = 'ok'")
     con.close()
     return path
@@ -149,7 +152,7 @@ def test_metadata(db):
                                                                        ("ops.main.bookings_ok", "VIEW")}
     t = wh.get_table("bookings")
     assert t["id"] == "ops.main.bookings" and t["num_rows"] == 100
-    assert [(c["name"], c["type"]) for c in t["columns"]] == [("day", "DATE"), ("amount", "DOUBLE"), ("status", "VARCHAR")]
+    assert [(c["name"], c["type"]) for c in t["columns"]] == [("day", "DATE"), ("amount", "DOUBLE"), ("status", "VARCHAR"), ("region", "VARCHAR")]
     assert "status = 'ok'" in wh.get_table("ops.main.bookings_ok")["view_query"]
     with pytest.raises(ValueError):
         wh.get_table("nope")
@@ -164,6 +167,38 @@ def test_app_serves_duckdb_datasets(duck_repo):
                                           "filters": {"start_date": "2026-11-01", "end_date": "2026-11-03"}})
         assert r.status_code == 200, r.text
         assert [row["bookings"] for row in r.json()["rows"]] == [10, 10]
+
+
+def test_select_filter_filters_rows_on_duckdb(duck_repo):
+    """End to end on a real engine: the choices come from a query, and a null default keeps every row."""
+    q = duck_repo / "queries"
+    (q / "regions.sql").write_text("SELECT region FROM bookings WHERE day >= @start_date AND day < @end_date "
+                                   "AND region IS NOT NULL GROUP BY region ORDER BY region")
+    (q / "region_bookings.sql").write_text(
+        "SELECT day, coalesce(region, 'none') AS region, count(*) AS bookings, sum(amount) AS gross_value\n"
+        "FROM bookings\nWHERE day >= @start_date AND day < @end_date\n"
+        "  AND (@region IS NULL OR region = @region)\n  AND (@channel IS NULL OR status = @channel)\n"
+        "GROUP BY ALL\nORDER BY day, region\n")
+    cfg = load_config(duck_repo, environ={})
+    assert not [i for i in run_checks(Registry(cfg), "regional_bookings") if i.level == "error"]
+    app = create_app(cfg, mode="live", store=Store(":memory:"))
+    dates = {"start_date": "2026-11-01", "end_date": "2026-11-03"}  # 20 rows: 5 North, 5 South, 10 null
+
+    def rows(query, **extra):
+        r = c.post("/api/datasets", json={"dashboard_id": "regional_bookings", "query_id": query,
+                                          "filters": {**dates, **extra}})
+        assert r.status_code == 200, r.text
+        return r.json()["rows"]
+
+    def total(**extra):
+        return sum(r["bookings"] for r in rows("region_bookings", **extra))
+
+    with TestClient(app) as c:
+        assert [r["region"] for r in rows("regions")] == ["North", "South"]
+        assert total() == 20  # All: @region is NULL, so rows with no region count too
+        assert total(region="North") == 5 and total(region="South") == 5
+        assert total(region="West") == 0  # a value that is not a choice is bound as is
+        assert total(region="North", channel="cancelled") == 1
 
 
 def test_cli_commands(duck_repo, monkeypatch):

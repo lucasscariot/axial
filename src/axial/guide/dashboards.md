@@ -1,6 +1,7 @@
 # Dashboards
 
-A dashboard is `dashboards/<id>.yaml`: an optional date filter and a 12-column grid of tiles.
+A dashboard is `dashboards/<id>.yaml`: an optional date filter, optional select filters and a
+12-column grid of tiles.
 Tiles fill rows left to right. The engine owns spacing, colours, fonts and formatting; you
 choose tiles, sizes and order.
 
@@ -8,6 +9,8 @@ choose tiles, sizes and order.
 title: Booking operations
 description: optional
 date_range: {default_days: 7, max_days: 31}   # binds start_date / end_date params
+filters:                                       # optional dropdowns, see Filters
+  - {param: region, label: Region, query: regions, column: region}
 tiles:
   - {type: text, markdown: "Excludes test accounts. Owner: ops-analytics.", span: 12}
   - {type: kpi, query: bookings_daily, value: bookings, reduce: sum, span: 3}
@@ -33,8 +36,9 @@ kpi 64, charts 200, funnel 260, table 330). With `facet`, `height` is the height
 panel (default 140, or 100 per lane with `lanes`); a `lanes` tile without `facet` defaults to
 110 per lane.
 
-`axial check` rejects any other key, on the dashboard, in `date_range` or on a tile (for
-example `reduce` on a `line` tile, or a misspelt `height`).
+The dashboard itself takes `title`, `description`, `date_range`, `filters` and `tiles`.
+`axial check` rejects any other key, on the dashboard, in `date_range`, on a filter or on a
+tile (for example `reduce` on a `line` tile, or a misspelt `height`).
 
 Dashboards are the `.yaml` files directly inside `dashboards/`. A `.yml` file or a file in a
 subfolder is not loaded, and `axial check` reports it.
@@ -119,3 +123,50 @@ These keys also work with a `DATE` or other category `x`.
   `month_to_date`, `last_month`, `quarter_to_date` or `year_to_date`. For example
   `date_range: {default: month_to_date, max_days: 31}`.
 - `default_days: 7` opens it on the last 7 days including today instead. Use one or the other.
+- The arrows on each side of the date fields move to the previous or next period of the same
+  kind. A range of whole calendar months moves by months (Last month goes to the month
+  before, a quarter to the quarter before). A period to date (This week, Month to date,
+  Quarter to date, Year to date) steps back to the whole period before it, so This week goes
+  to Last week. Any other range moves by its own length in days. Next never goes past today:
+  it is disabled once the range includes today, and a step that would run past today ends
+  today, so Next from Last week gives This week. Type dates in the fields to look further
+  ahead, for example on a dashboard of forecasts.
+
+## Filters
+
+`filters` adds dropdowns to the toolbar, next to the date filter. Each one sets a query param
+to one value, and its choices come from a saved query:
+
+```yaml
+filters:
+  - {param: region, label: Region, query: regions, column: region}
+  - {param: channel, query: channels, column: channel}     # label defaults to "Channel"
+```
+
+- `param` is the query param the filter sets. `label` names the dropdown (default: the
+  param, humanized). `query` is the saved query that lists the choices, and `column` the
+  STRING column they are read from: its distinct non-null values, in the order the rows
+  arrive, so end that SQL with an `ORDER BY`.
+- The first choice is **All**, which sends no value, so each query's default for the param
+  applies. Declare the param as `{type: STRING, default: null}` and write
+  `(@region IS NULL OR region = @region)` so All keeps every row (see `axial guide queries`).
+- The filter applies to every tile query that declares the param, and is ignored by the
+  others. `axial check` warns about the queries that ignore it, and rejects a filter whose
+  param no tile query declares, is not STRING or has no default.
+- The choices query is an ordinary saved query (same checks, cache, limits and history). It
+  may take the date params, so the choices follow the selected dates; it cannot take any
+  filter's param, so filters are independent: picking one never changes the choices of
+  another. It does not need a tile.
+- One value at a time, from the list only. The value reaches the warehouse as a query param,
+  never as SQL text.
+- The selection is kept in the page URL (`?region=North`), so a reload or a shared link
+  keeps it, and it is printed under the title and in the PDF's name. A selected value that
+  is no longer among the choices, because the dates changed, stays selected and is marked
+  "not in these dates" ("not listed" when the choices do not depend on the dates): the tiles
+  keep showing what the dropdown says until you pick another value or All.
+- Each filter needs its own param, which cannot be a date param or `start`, `end` or
+  `print` (the page URL uses those).
+- With `--fixture`, the choices come from the choices query's fixture or made-up rows, and
+  picking one does not filter the fixture data, just as fixtures ignore the dates.
+  `axial preview <dashboard> --filter region=North` opens or renders a dashboard with a value
+  selected.

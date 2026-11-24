@@ -10,6 +10,7 @@ params:
   start_date: DATE                              # bound to the dashboard date filter
   end_date: DATE                                # EXCLUSIVE end
   limit: {type: INT64, default: 500}            # params with a default need no filter
+  region: {type: STRING, default: null}         # optional: NULL unless a filter sets it
 columns: {day: DATE, orders: INT64, revenue: NUMERIC}   # exact output columns and types
 formats: {orders: integer, revenue: money}      # optional display formats
 labels: {revenue: Revenue (GBP)}                # optional display names; default: "Revenue"
@@ -31,6 +32,10 @@ ORDER BY day
   string formatting.
 - `end_date` is **exclusive**: write `>= @start_date AND < @end_date`.
 - **Param types:** DATE, INT64, FLOAT64, NUMERIC, STRING, BOOL.
+- **Optional params:** `default: null` binds a typed SQL NULL when no value is given (the
+  dashboard filter shows All), on BigQuery and DuckDB alike. Test for it explicitly:
+  `AND (@region IS NULL OR region = @region)`. A plain `region = @region` matches no row when
+  the param is NULL. `axial run <query> --param region=North` runs it with a value.
 - **Column types:** the param types, plus TIMESTAMP, DATETIME and BIGNUMERIC.
 - `columns` must list every output column, with the type BigQuery returns. `axial check`
   verifies that the declared params match the `@params` the SQL uses.

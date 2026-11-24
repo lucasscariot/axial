@@ -98,6 +98,13 @@ def test_preview_takes_one_output(repo, monkeypatch):
     assert r.exit_code == 2 and "not both" in r.output
 
 
+def test_preview_filter_must_name_a_filter_of_the_dashboard(repo, monkeypatch):
+    monkeypatch.chdir(repo)
+    for arg in ("site=North", "region", "region="):
+        r = CliRunner().invoke(main, ["preview", "regional_bookings", "--fixture", "--filter", arg, "--screenshot", "a.png"])
+        assert r.exit_code == 2 and "PARAM one of this dashboard's filters (channel, region)" in r.output, r.output
+
+
 def test_preview_exports_a_pdf(repo, monkeypatch):
     """End to end: serve fixture data, render in Chromium, print to PDF. Needs the [screenshot] extra."""
     pw = pytest.importorskip("playwright.sync_api")

@@ -15,9 +15,9 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from .config import Config, engine_version
-from .registry import (DATE_PRESETS, COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FORMATS, NUMERIC_TYPES,
-                       PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, SNIPPET_NAME, TILE_KEYS, TILE_TYPES,
-                       Dashboard, Query, Registry, includes)
+from .registry import (DATE_PRESETS, COLUMN_TYPES, COMMON_TILE_KEYS, DASHBOARD_KEYS, DATE_RANGE_KEYS, FILTER_KEYS, FORMATS,
+                       NUMERIC_TYPES, PARAM_KEYS, PARAM_TYPES, QUERY_KEYS, REDUCERS, RESERVED_FILTER_PARAMS, SNIPPET_NAME,
+                       TILE_KEYS, TILE_TYPES, Dashboard, Query, Registry, includes)
 from .sqlcheck import check_read_only_select, referenced_params
 
 
@@ -121,7 +121,7 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             if "default_days" in (d.raw.get("date_range") or {}):
                 err("date_range: use default or default_days, not both")
 
-    for q_id in d.query_ids:
+    for q_id in d.query_ids + d.option_query_ids:
         q = reg.queries.get(q_id)
         if q is None:
             continue
@@ -130,12 +130,14 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             if name in bound:
                 if p.type != "DATE":
                     err(f"query {q_id}: param {name} is bound to the date filter but has type {p.type}")
-            elif p.required:
+            elif p.required and name not in d.filter_params:  # a select filter's param is reported below
                 err(f"query {q_id}: required param {name} is not bound to any dashboard filter (give it a default)")
-        if dr and not (bound & set(q.params)):
+        if dr and not (bound & set(q.params)) and q_id in d.query_ids:
             warn(f"query {q_id} has no {dr.start_param}/{dr.end_param} params; its tiles ignore the date filter")
         elif dr and len(bound & set(q.params)) == 1:
             err(f"query {q_id} binds only one of {dr.start_param}/{dr.end_param}")
+
+    out += _select_filters(d, reg)
 
     for i, t in enumerate(d.tiles):
         tw = f"{where} tile[{i}] ({t.type} {t.query})"
@@ -158,10 +160,8 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             continue
         q = reg.queries.get(t.query)
         if q is None:
-            if any(e.path.parent == reg.cfg.queries_dir and e.path.stem == t.query for e in reg.errors):
-                continue  # the query exists but failed to load; that error is already reported
-            known = ", ".join(sorted(reg.queries)) or "none"
-            err(f"query {t.query!r} does not exist (known: {known})", tw)
+            if (m := _query_missing(reg, t.query)):  # None: it failed to load, which is already reported
+                err(m, tw)
             continue
         cols = q.columns
 
@@ -208,6 +208,73 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             for c in (t.raw.get("formats") or {}):
                 if c not in cols:
                     err(f"formats.{c}: not a column of {q.id}", tw)
+    return out
+
+
+def _query_missing(reg: Registry, q_id: str) -> str | None:
+    """Why a referenced query is missing, or None when it failed to load (already reported)."""
+    if any(e.path.parent == reg.cfg.queries_dir and e.path.stem == q_id for e in reg.errors):
+        return None
+    return f"query {q_id!r} does not exist (known: {', '.join(sorted(reg.queries)) or 'none'})"
+
+
+def _select_filters(d: Dashboard, reg: Registry) -> list[Issue]:
+    """`filters`: each binds a STRING param with a default and reads its choices from a query."""
+    out: list[Issue] = []
+    dates = {d.date_range.start_param, d.date_range.end_param} if d.date_range else set()
+    tiles = [reg.queries[q] for q in d.query_ids if q in reg.queries]
+    seen: set[str] = set()
+    for i, (f, raw) in enumerate(zip(d.filters, d.raw.get("filters") or [])):
+        fw = f"dashboards/{d.id} filter[{i}] ({f.param or '?'})"
+
+        def err(m: str) -> None:
+            out.append(Issue("error", fw, m))
+
+        for k in _unknown(raw, FILTER_KEYS):
+            err(f"unknown key {k!r} ({_use(FILTER_KEYS)})")
+        if not f.param:
+            err("param is required: the query param this filter sets")
+        elif f.param in seen:
+            err(f"another filter already sets param {f.param}; give each filter its own param")
+        elif f.param in dates:
+            err(f"param {f.param} is bound to the date filter; a select filter needs another param")
+        elif f.param in RESERVED_FILTER_PARAMS:
+            err(f"param {f.param} is reserved by the dashboard URL ({', '.join(sorted(RESERVED_FILTER_PARAMS))}); "
+                "rename the param")
+        else:
+            takers = [q for q in tiles if f.param in q.params]
+            if not takers:
+                err(f"no query on this dashboard declares param {f.param}, so the filter would change nothing")
+            elif len(takers) < len(tiles):
+                out.append(Issue("warning", fw, f"{', '.join(q.id for q in tiles if q not in takers)} "
+                                 f"{'has' if len(tiles) - len(takers) == 1 else 'have'} no {f.param} param; "
+                                 f"their tiles ignore the {f.label} filter"))
+            for q in takers:
+                p = q.params[f.param]
+                if p.type != "STRING":
+                    err(f"query {q.id}: param {f.param} is bound to this filter but has type {p.type}; use STRING")
+                if p.required:
+                    err(f"query {q.id}: param {f.param} is bound to this filter but has no default; give it one "
+                        f"(usually `default: null`, with SQL like `@{f.param} IS NULL OR ... = @{f.param}`) so All works")
+        seen.add(f.param)
+        if not f.query:
+            err("query is required: the saved query that lists the choices")
+            continue
+        oq = reg.queries.get(f.query)
+        if oq is None:
+            if (m := _query_missing(reg, f.query)):
+                err(m)
+            continue
+        if not f.column:
+            err("column is required: the column of the choices")
+        elif f.column not in oq.columns:
+            err(f"column: {f.column!r} is not in query {oq.id} columns ({', '.join(oq.columns)})")
+        elif oq.columns[f.column] != "STRING":
+            err(f"column: {f.column!r} is {oq.columns[f.column]}, expected STRING; CAST it in the SQL")
+        clash = sorted((d.filter_params - dates) & set(oq.params))
+        if clash:
+            err(f"query {oq.id} lists the choices, so it cannot take filter param {', '.join(clash)}: "
+                "filters are independent")
     return out
 
 
@@ -412,7 +479,7 @@ def run_checks(reg: Registry, dashboard_id: str | None = None) -> list[Issue]:
             return issues + [Issue("error", f"dashboards/{dashboard_id}", "dashboard does not exist "
                                    f"(known: {', '.join(sorted(reg.dashboards)) or 'none'})")]
         dashboards = [d]
-        query_ids = [q for q in d.query_ids if q in reg.queries]
+        query_ids = [q for q in d.query_ids + d.option_query_ids if q in reg.queries]
     else:
         dashboards = list(reg.dashboards.values())
         query_ids = list(reg.queries)

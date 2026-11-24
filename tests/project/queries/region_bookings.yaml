@@ -1,0 +1,10 @@
+title: Bookings by region
+description: Bookings and gross booking value per day and region.
+params:
+  start_date: DATE
+  end_date: DATE
+  region: {type: STRING, default: null}    # null: every region, when the filter shows All
+  channel: {type: STRING, default: null}
+columns: {day: DATE, region: STRING, bookings: INT64, gross_value: NUMERIC}
+formats: {bookings: integer, gross_value: money}
+labels: {gross_value: Gross value}

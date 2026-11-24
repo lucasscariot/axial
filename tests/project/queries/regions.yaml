@@ -1,0 +1,4 @@
+title: Regions
+description: Regions with bookings in the selected dates, for the Region filter.
+params: {start_date: DATE, end_date: DATE}
+columns: {region: STRING}

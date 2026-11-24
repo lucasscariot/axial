@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api, type Dataset, type DashboardDef, type Meta, type Tile } from "./api";
-import { addDays, daysBetween, engineName, getDisplay, humanize, labelOf, ms } from "./format";
-import { IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
+import { addDays, daysBetween, engineName, getDisplay, humanize, labelOf, ms, shiftRange, todayIso } from "./format";
+import { IconChevron, IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
 import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
 import { ChartTile } from "./tiles/Chart";
@@ -31,11 +31,17 @@ function spanStyle(span: number) {
 
 const fmtDay = (iso: string) =>
   new Date(iso + "T00:00:00").toLocaleDateString(getDisplay().locale, { day: "numeric", month: "short" });
+const fmtRange = (r: Range) =>
+  daysBetween(r.start, r.end) === 1 ? fmtDay(r.start) : `${fmtDay(r.start)} – ${fmtDay(addDays(r.end, -1))}`;
+
+type Choices = { status: "loading" | "ok" | "error"; rows?: Dataset["rows"]; error?: string };
 
 export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   const [def, setDef] = useState<DashboardDef | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [range, setRange] = useState<{ start: string; end: string } | null>(null); // end exclusive
+  const [sel, setSel] = useState<Record<string, string>>({}); // select filter values; absent is All
+  const [choices, setChoices] = useState<Record<string, Choices>>({}); // by options query
   const [bypass, setBypass] = useState(false);
   const [data, setData] = useState<Record<string, DS>>({});
   const [inspect, setInspect] = useState<InspectTarget | null>(null);
@@ -52,19 +58,23 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
       setDef(d);
       document.title = d.title;
       const sp = new URLSearchParams(window.location.search);
+      setSel(Object.fromEntries(d.filters.flatMap((f) => sp.get(f.param) ? [[f.param, sp.get(f.param)!]] : [])));
       if (d.date_range) setRange({ start: sp.get("start") ?? d.date_range.default_start, end: sp.get("end") ?? d.date_range.default_end });
       else setRange({ start: "", end: "" });
     }, (e) => setLoadErr(e.message));
   }, [id]);
 
-  const filters = useMemo(() => {
+  const dates = useMemo((): Record<string, string> => {
     if (!def?.date_range || !range) return {};
     return { [def.date_range.start_param]: range.start, [def.date_range.end_param]: range.end };
   }, [def, range]);
+  // Queries that do not declare a filter's param ignore it (the server drops it for them).
+  const filters = useMemo(() => ({ ...dates, ...sel }), [dates, sel]);
 
   useEffect(() => {
     if (!def || !range) return;
-    if (def.date_range) setSearch({ start: range.start, end: range.end });
+    setSearch({ ...(def.date_range ? { start: range.start, end: range.end } : {}),
+      ...Object.fromEntries(def.filters.map((f) => [f.param, sel[f.param] ?? null])) });
     abort.current?.abort();
     const ac = new AbortController();
     abort.current = ac;
@@ -84,13 +94,29 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
     return () => ac.abort();
   }, [def, range, filters, bypass, nonce]);
 
+  // The choices follow the dates only: filters are independent, so picking one never reloads them.
+  useEffect(() => {
+    if (!def?.filters.length || !range) return;
+    const ac = new AbortController();
+    const queryIds = [...new Set(def.filters.map((f) => f.query))].filter((q) => def.queries[q]);
+    setChoices((s) => Object.fromEntries(queryIds.map((q) => [q, { ...s[q], status: "loading" }])));
+    for (const q of queryIds) {
+      api.dataset({ dashboard_id: def.id, query_id: q, filters: dates, bypass_cache: bypass }, ac.signal).then(
+        (d) => setChoices((s) => ({ ...s, [q]: { status: "ok", rows: d.rows } })),
+        (e) => e.name !== "AbortError" && setChoices((s) => ({ ...s, [q]: { status: "error", error: e.message } })),
+      );
+    }
+    return () => ac.abort();
+  }, [def, range, dates, bypass, nonce]);
+
   const ready = def !== null && Object.values(data).length > 0 && Object.values(data).every((d) => d.status !== "loading");
   const loading = Object.values(data).some((d) => d.status === "loading");
 
   useEffect(() => {
     if (printing === "off" || !ready || !def || !range) return;
     setInspect(null);
-    const restore = enterPrintMode(pdfTitle(def.title, range.start || undefined, range.end ? addDays(range.end, -1) : undefined));
+    const picked = def.filters.map((f) => sel[f.param]).filter(Boolean);
+    const restore = enterPrintMode(pdfTitle([def.title, ...picked].join(" "), range.start || undefined, range.end ? addDays(range.end, -1) : undefined));
     let cancelled = false;
     let restored = false;
     const done = () => {
@@ -115,7 +141,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
       if (printing === "dialog") done();
       else if (!restored) { restored = true; restore(); }
     };
-  }, [printing, ready, def, range]);
+  }, [printing, ready, def, range, sel]);
 
   // Cmd/Ctrl+P goes through the same path, so the PDF gets light colours and a print layout.
   useEffect(() => {
@@ -143,12 +169,24 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
     }, () => setRange({ start, end }));
   }, [id]);
 
+  const onSelect = useCallback((param: string, value: string | null) => {
+    setSel((s) => {
+      const { [param]: _, ...rest } = s;
+      return value === null ? rest : { ...rest, [param]: value };
+    });
+  }, []);
+
   if (loadErr) return <main className="page"><div className="banner error">{loadErr}</div></main>;
   if (!def || !range) return <main className="page"><div className="page-head"><div className="skeleton-line" /></div></main>;
 
   const dr = def.date_range;
   const rangeDays = dr ? daysBetween(range.start, range.end) : 0;
   const rangeInvalid = dr ? rangeDays < 1 || rangeDays > dr.max_days : false;
+  // "Today" as the engine dated the presets, so a shifted range highlights the preset it equals.
+  const endToday = dr?.presets.find((p) => p.id === "today")?.end ?? addDays(todayIso(), 1);
+  const prev = dr && !rangeInvalid ? shiftRange(range, -1, endToday, dr.max_days) : null;
+  const next = dr && !rangeInvalid ? shiftRange(range, 1, endToday, dr.max_days) : null;
+  const picked = def.filters.filter((f) => sel[f.param]).map((f) => `${f.label}: ${sel[f.param]}`);
 
   return (
     <main className="page dashboard" data-dashboard-ready={ready ? "true" : "false"} data-print-ready={printReady ? "true" : "false"}>
@@ -156,12 +194,15 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
         <div className="page-head-text">
           <p className="print-only print-brand">{meta?.display.title ?? meta?.project}</p>
           <h1 className="page-title">{def.title}</h1>
-          {dr && (
+          {(dr || picked.length > 0) && (
             <p className="page-sub">
-              {rangeDays === 1 ? fmtDay(range.start) : `${fmtDay(range.start)} – ${fmtDay(addDays(range.end, -1))}`}
-              <span className={`dot-sep ${rangeInvalid ? "bad" : ""}`}>
-                {rangeDays} day{rangeDays === 1 ? "" : "s"}{rangeInvalid ? ` · max ${dr.max_days}` : ""}
-              </span>
+              {dr && <>
+                {fmtRange(range)}
+                <span className={`dot-sep ${rangeInvalid ? "bad" : ""}`}>
+                  {rangeDays} day{rangeDays === 1 ? "" : "s"}{rangeInvalid ? ` · max ${dr.max_days}` : ""}
+                </span>
+              </>}
+              {picked.map((p, i) => <span key={p} className={dr || i ? "dot-sep" : ""}>{p}</span>)}
             </p>
           )}
           {def.description && <p className="page-desc">{def.description}</p>}
@@ -174,41 +215,62 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
       </header>
 
       <div className="toolbar">
-        {dr && (
-          <>
-            <div className="segmented" role="group" aria-label="Date range presets">
-              {dr.presets.map((p) => {
-                const on = range.start === p.start && range.end === p.end;
-                return (
-                  <button key={p.id} aria-pressed={on} className={on ? "on" : ""}
-                    onClick={() => onPreset(p.id, p.start, p.end)}>
-                    {p.label}
-                  </button>
-                );
-              })}
+        <div className="toolbar-main">
+          {dr && (
+            <>
+              <div className="segmented" role="group" aria-label="Date range presets">
+                {dr.presets.map((p) => {
+                  const on = range.start === p.start && range.end === p.end;
+                  return (
+                    <button key={p.id} aria-pressed={on} className={on ? "on" : ""}
+                      onClick={() => onPreset(p.id, p.start, p.end)}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="date-range">
+                <button className="icon-btn sm" disabled={!prev} onClick={() => prev && setRange(prev)}
+                  aria-label="Previous period" title={prev ? `Previous period: ${fmtRange(prev)}` : undefined}>
+                  <IconChevron dir="left" />
+                </button>
+                <span className="date-fields" title="End date is inclusive here; queries receive an exclusive end_date">
+                  <input type="date" aria-label="From" value={range.start} max={addDays(range.end, -1)}
+                    onChange={(e) => e.target.value && onRange(e.target.value, addDays(range.end, -1))} />
+                  <span className="date-arrow" aria-hidden>→</span>
+                  <input type="date" aria-label="To" value={addDays(range.end, -1)} min={range.start}
+                    onChange={(e) => e.target.value && onRange(range.start, e.target.value)} />
+                </span>
+                <button className="icon-btn sm" disabled={!next} onClick={() => next && setRange(next)}
+                  aria-label="Next period" title={next ? `Next period: ${fmtRange(next)}` : rangeInvalid ? undefined : "The range already reaches today"}>
+                  <IconChevron dir="right" />
+                </button>
+              </div>
+            </>
+          )}
+          {def.filters.length > 0 && (
+            <div className="toolbar-filters">
+              {def.filters.map((f) => (
+                <FilterSelect key={f.param} label={f.label} value={sel[f.param]} choices={choices[f.query]} column={f.column}
+                  followsDates={!!dr && dr.start_param in (def.queries[f.query]?.params ?? {})} onChange={(v) => onSelect(f.param, v)} />
+              ))}
             </div>
-            <div className="date-range" title="End date is inclusive here; queries receive an exclusive end_date">
-              <input type="date" aria-label="From" value={range.start} max={addDays(range.end, -1)}
-                onChange={(e) => e.target.value && onRange(e.target.value, addDays(range.end, -1))} />
-              <span className="date-arrow" aria-hidden>→</span>
-              <input type="date" aria-label="To" value={addDays(range.end, -1)} min={range.start}
-                onChange={(e) => e.target.value && onRange(range.start, e.target.value)} />
-            </div>
-          </>
-        )}
-        <span className="spacer" />
-        <label className="switch" title={getDisplay().billing_mode === "local" ? "Skip the app cache. Every dataset runs a new query." : "Skip the app cache and BigQuery's result cache. Every dataset submits a new, billed job."}>
-          <input type="checkbox" role="switch" checked={bypass} onChange={(e) => setBypass(e.target.checked)} />
-          <span className="switch-track" aria-hidden><span className="switch-thumb" /></span>
-          Bypass caches
-        </label>
-        <button className="btn" onClick={() => setNonce((n) => n + 1)} title="Reload datasets (uses the cache unless bypassed)">
-          <IconReload className={loading ? "spin" : ""} /> Reload
-        </button>
-        <button className="btn" onClick={() => setPrinting("dialog")} disabled={!ready || printing !== "off"}
-          title={ready ? "Export as PDF: choose “Save as PDF” in the print dialog" : "Wait for every tile to load"}>
-          <IconDownload /> Export PDF
-        </button>
+          )}
+        </div>
+        <div className="toolbar-actions">
+          <label className="switch" title={getDisplay().billing_mode === "local" ? "Skip the app cache. Every dataset runs a new query." : "Skip the app cache and BigQuery's result cache. Every dataset submits a new, billed job."}>
+            <input type="checkbox" role="switch" checked={bypass} onChange={(e) => setBypass(e.target.checked)} />
+            <span className="switch-track" aria-hidden><span className="switch-thumb" /></span>
+            Bypass caches
+          </label>
+          <button className="btn" onClick={() => setNonce((n) => n + 1)} title="Reload datasets (uses the cache unless bypassed)">
+            <IconReload className={loading ? "spin" : ""} /> Reload
+          </button>
+          <button className="btn" onClick={() => setPrinting("dialog")} disabled={!ready || printing !== "off"}
+            title={ready ? "Export as PDF: choose “Save as PDF” in the print dialog" : "Wait for every tile to load"}>
+            <IconDownload /> Export PDF
+          </button>
+        </div>
       </div>
 
       {def.errors.length > 0 && (
@@ -235,6 +297,29 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
 }
 
 type Range = { start: string; end: string };
+
+/** A select filter. A value no longer among the choices (the dates changed) stays selected and
+ *  marked, so the tiles keep matching what the toolbar says until the viewer picks again. */
+function FilterSelect({ label, value, choices, column, followsDates, onChange }: {
+  label: string; value?: string; choices?: Choices; column: string; followsDates: boolean; onChange: (v: string | null) => void;
+}) {
+  const values = useMemo(() => [...new Set((choices?.rows ?? []).map((r) => r[column])
+    .filter((v) => v !== null && v !== undefined && v !== "").map(String))], [choices?.rows, column]);
+  const stale = !!value && choices?.status === "ok" && !values.includes(value);
+  const title = choices?.status === "error" ? `Could not load the choices: ${choices.error}`
+    : stale ? `${value} is not among the choices${followsDates ? " for these dates" : ""}. Tiles still show ${value} only; choose All to clear.` : undefined;
+  return (
+    <label className={`select-filter${value ? " on" : ""}${stale ? " stale" : ""}`} title={title}>
+      <span className="select-filter-label">{label}</span>
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">All</option>
+        {value && !values.includes(value) && <option value={value}>{stale ? `${value} (${followsDates ? "not in these dates" : "not listed"})` : value}</option>}
+        {values.map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <IconChevron dir="down" className="select-filter-chevron" />
+    </label>
+  );
+}
 
 function TileFrame({ tile, def, ds, meta, range, onInspect }: { tile: Tile; def: DashboardDef; ds?: DS; meta: Meta | null; range: Range; onInspect: () => void }) {
   const q = def.queries[tile.query];

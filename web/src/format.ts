@@ -133,3 +133,41 @@ export const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 export const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+
+type Range = { start: string; end: string }; // ISO dates, end exclusive
+const monthIndex = (iso: string) => +iso.slice(0, 4) * 12 + +iso.slice(5, 7) - 1;
+/** The first of the month `n` months after the month of `iso`. */
+const addMonths = (iso: string, n: number) => {
+  const t = monthIndex(iso) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}-01`;
+};
+
+/** How the arrows step [start, end): by whole calendar months when it is made of them; by the
+ *  whole week, month, quarter or year a period "to date" (ending at `endToday`) belongs to, the
+ *  smallest first; otherwise by its own length in days. */
+function step(r: Range, endToday: string): { months: number } | { days: number } {
+  const days = daysBetween(r.start, r.end);
+  if (r.start.endsWith("-01") && r.end.endsWith("-01")) return { months: monthIndex(r.end) - monthIndex(r.start) };
+  if (r.end === endToday && days > 1) {
+    if (new Date(r.start + "T00:00:00Z").getUTCDay() === 1 && days <= 7) return { days: 7 };
+    if (r.start.endsWith("-01")) {
+      for (const n of [1, 3, 12]) if ((monthIndex(r.start) % n === 0) && addMonths(r.start, n) >= r.end) return { months: n };
+    }
+  }
+  return { days };
+}
+
+/** The period before (-1) or after (+1) a range, or null when "next" would start after today.
+ *  Going forward it stops at `endToday` (today, exclusive end), so the last step is a period to
+ *  date; a step that would exceed `maxDays` falls back to the range's own length. */
+export function shiftRange(r: Range, dir: -1 | 1, endToday: string, maxDays: number): Range | null {
+  if (dir > 0 && r.end >= endToday) return null;
+  const by = (s: ReturnType<typeof step>): Range => {
+    if ("months" in s) { const start = addMonths(r.start, dir * s.months); return { start, end: addMonths(start, s.months) }; }
+    const start = addDays(r.start, dir * s.days);
+    return { start, end: addDays(start, s.days) };
+  };
+  let out = by(step(r, endToday));
+  if (daysBetween(out.start, out.end) > maxDays) out = by({ days: daysBetween(r.start, r.end) });
+  return dir > 0 && out.end > endToday ? { start: out.start, end: endToday } : out;
+}

@@ -24,7 +24,10 @@ REDUCERS = {"sum", "min", "max", "first", "last", "count", "single"}
 # Every key a query or dashboard file may hold; `axial check` rejects anything else.
 QUERY_KEYS = {"title", "description", "params", "columns", "formats", "labels", "cache_ttl_seconds"}
 PARAM_KEYS = {"type", "default"}
-DASHBOARD_KEYS = {"title", "description", "date_range", "tiles"}
+DASHBOARD_KEYS = {"title", "description", "date_range", "filters", "tiles"}
+FILTER_KEYS = {"param", "label", "query", "column"}
+# Dashboard URL keys that a select filter's param would clash with (`?region=North` sits beside them).
+RESERVED_FILTER_PARAMS = {"start", "end", "print"}
 DATE_RANGE_KEYS = {"default", "default_days", "max_days", "start_param", "end_param"}
 COMMON_TILE_KEYS = {"type", "query", "span", "title", "height"}
 # Options of line and bar tiles for time series: small multiples, lanes and shaded periods.
@@ -162,6 +165,19 @@ class Tile:
 
 
 @dataclass
+class SelectFilter:
+    """A dropdown bound to one STRING param, its choices read from a saved query's column."""
+
+    param: str
+    query: str
+    column: str
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        self.label = self.label or self.param.replace("_", " ").strip().capitalize()
+
+
+@dataclass
 class Dashboard:
     id: str
     title: str
@@ -170,14 +186,26 @@ class Dashboard:
     tiles: list[Tile]
     description: str = ""
     raw: dict = field(default_factory=dict)
+    filters: list[SelectFilter] = field(default_factory=list)
 
     @property
     def query_ids(self) -> list[str]:
+        """The queries its tiles read."""
         seen: list[str] = []
         for t in self.tiles:
             if t.query and t.query not in seen:
                 seen.append(t.query)
         return seen
+
+    @property
+    def option_query_ids(self) -> list[str]:
+        """The queries its select filters read their choices from, and no tile reads."""
+        tiles = set(self.query_ids)
+        return list(dict.fromkeys(f.query for f in self.filters if f.query and f.query not in tiles))
+
+    @property
+    def filter_params(self) -> set[str]:
+        return {f.param for f in self.filters}
 
 
 class LoadError(Exception):
@@ -301,6 +329,14 @@ def load_dashboard(path: Path) -> Dashboard:
                 raw=t,
             )
         )
+    filters = []
+    if not isinstance(raw.get("filters") or [], list):
+        raise LoadError(path, "filters must be a list")
+    for f in raw.get("filters") or []:
+        if not isinstance(f, dict):
+            raise LoadError(path, "each filter must be a mapping, as in {param: region, query: regions, column: region}")
+        filters.append(SelectFilter(param=str(f.get("param") or ""), query=str(f.get("query") or ""),
+                                    column=str(f.get("column") or ""), label=str(f.get("label") or "")))
     return Dashboard(
         id=path.stem,
         title=raw.get("title", path.stem),
@@ -309,6 +345,7 @@ def load_dashboard(path: Path) -> Dashboard:
         date_range=date_range,
         tiles=tiles,
         raw=raw,
+        filters=filters,
     )
 
 
