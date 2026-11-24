@@ -1,8 +1,8 @@
 class Axial < Formula
   desc "Dashboards as code for BigQuery and DuckDB, with per-query cost tracing"
   homepage "https://github.com/lucasscariot/axial"
-  url "https://github.com/lucasscariot/axial/archive/refs/tags/v0.3.2.tar.gz"
-  sha256 "29025a5c595054875ce3417c383ec3b488389e16c0588bfbb5678e1a1740fded"
+  url "https://github.com/lucasscariot/axial/archive/refs/tags/v0.3.3.tar.gz"
+  sha256 "434839a698dfb98e9ec2383710179c3a77960b951897afa05c1b9c678ca4ff1a"
 
   depends_on "uv" => :build
   depends_on "python@3.14"
