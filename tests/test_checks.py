@@ -136,3 +136,35 @@ def test_dockerfile_engine_pin_must_satisfy_the_engine_range(repo):
     assert level == "warning" and "is not a release tag" in message
     dockerfile.write_text("FROM scratch\n")
     assert issues() == []
+
+
+def test_time_series_options_are_checked(repo):
+    def found(tile: str) -> list[str]:
+        (repo / "dashboards" / "service_health.yaml").write_text(
+            "title: x\ndate_range: {default_days: 3, max_days: 31}\ntiles:\n  - " + tile + "\n")
+        return [e.split(": ", 1)[1] for e in errors(repo, "service_health")]
+
+    base = "{type: line, query: service_readings, x: read_at, y: [error_rate, replicas]"
+    assert found(base + ", facet: service, facet_columns: 2, lanes: true, highlight: incident, step: replicas}") == []
+    assert found(base + ", step: true, facet: service}") == []
+    assert found(base + ", facet: region}") == [
+        "facet: column 'region' is not in query service_readings columns (service, read_at, error_rate, replicas, incident)"]
+    assert found(base + ", facet: replicas}") == [
+        "facet: column 'replicas' is already the x, y or series of this tile; facet by another column"]
+    assert found(base + ", facet_columns: 2}") == ["facet_columns only applies with facet"]
+    assert found(base + ", facet: service, facet_columns: 5}") == ["facet_columns must be a whole number from 1 to 4, got 5"]
+    assert found(base + ", highlight: replicas}") == [
+        "highlight: column 'replicas' is INT64, expected BOOL (true where the period is shaded)"]
+    assert found(base + ", step: [replicas, incident]}") == [
+        "step: 'incident' is not one of this tile's y columns (error_rate, replicas); use true for every line, or name y columns"]
+    assert found(base + ", lanes: 'on'}") == ["lanes must be true or false, got 'on'"]
+    assert found("{type: line, query: service_readings, x: read_at, y: error_rate, lanes: true}") == [
+        "lanes needs a list of at least two y columns, one per lane"]
+    assert found("{type: line, query: service_readings, x: read_at, y: error_rate, series: service, lanes: true}") == [
+        "lanes needs a list of at least two y columns, one per lane",
+        "lanes cannot be combined with series: lanes draw one y column each"]
+    # the keys belong to line and bar tiles only, and step to line tiles only
+    assert found("{type: bar, query: service_readings, x: read_at, y: replicas, step: true}")[0].startswith(
+        "unknown key 'step' for a bar tile")
+    assert found("{type: table, query: service_readings, facet: service}")[0].startswith(
+        "unknown key 'facet' for a table tile")

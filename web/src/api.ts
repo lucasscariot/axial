@@ -20,6 +20,7 @@ export type Tile = {
   value?: string; reduce?: string; format?: string; compare?: string;
   x?: string; y?: string | string[]; series?: string; columns?: string[]; formats?: Record<string, string>;
   height?: number;
+  facet?: string; facet_columns?: number; lanes?: boolean; highlight?: string; step?: boolean | string | string[];
 };
 
 export type DashboardDef = {

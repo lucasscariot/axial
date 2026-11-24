@@ -8,7 +8,7 @@ import { defaultFormat, fmt, labelOf } from "../format";
 
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
 
-const MAX_SERIES = 8;
+export const MAX_SERIES = 8;
 
 export function cssVar(el: Element, name: string) {
   return getComputedStyle(el).getPropertyValue(name).trim();
@@ -36,7 +36,7 @@ export const fontsReady: Promise<unknown> = Promise.race([
 export const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function withAlpha(hex: string, a: number) {
+export function withAlpha(hex: string, a: number) {
   const n = parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }

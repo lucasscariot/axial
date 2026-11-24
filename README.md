@@ -147,7 +147,10 @@ tiles:
 ```
 
 The KPI and the trend share one BigQuery job. Tile types are `kpi`, `line`, `bar`, `funnel`,
-`table` and markdown `text`. `axial guide dashboards` has the full reference.
+`table` and markdown `text`. Line and bar tiles plot `TIMESTAMP` and `DATETIME` columns on a
+time axis, and for time-series review can draw one small panel per entity (`facet`), one lane
+per measure (`lanes`), shaded periods where a condition held (`highlight`) and held values as
+steps (`step`). `axial guide dashboards` has the full reference.
 
 Queries that need the same SQL share it as a snippet: a `{{ name }}` line in a query is
 replaced by `snippets/<name>.sql`. That is the whole mechanism; `axial guide queries` has the

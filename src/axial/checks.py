@@ -193,6 +193,8 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
                 need_col("series")
                 if isinstance(t.raw.get("y"), list) and len(t.raw["y"]) > 1:
                     err("use either series or multiple y columns, not both", tw)
+            for problem in _chart_options(t.raw, cols, q.id):
+                err(problem, tw)
         elif t.type == "funnel":
             need_col("x")
             need_col("y", numeric=True)
@@ -206,6 +208,53 @@ def check_dashboard(d: Dashboard, reg: Registry) -> list[Issue]:
             for c in (t.raw.get("formats") or {}):
                 if c not in cols:
                     err(f"formats.{c}: not a column of {q.id}", tw)
+    return out
+
+
+def _chart_options(raw: dict, cols: dict[str, str], q_id: str) -> list[str]:
+    """facet, facet_columns, lanes, highlight and step on a line or bar tile."""
+    out: list[str] = []
+    ys = raw.get("y") if isinstance(raw.get("y"), list) else [raw.get("y")]
+
+    def column(key: str) -> str | None:
+        v = raw.get(key)
+        if not isinstance(v, str) or not v:
+            out.append(f"{key} must be one column name")
+        elif v not in cols:
+            out.append(f"{key}: column {v!r} is not in query {q_id} columns ({', '.join(cols)})")
+        else:
+            return v
+        return None
+
+    if raw.get("facet") is not None:
+        f = column("facet")
+        if f is not None and f in (raw.get("x"), raw.get("series"), *ys):
+            out.append(f"facet: column {f!r} is already the x, y or series of this tile; facet by another column")
+    if raw.get("facet_columns") is not None:
+        n = raw["facet_columns"]
+        if raw.get("facet") is None:
+            out.append("facet_columns only applies with facet")
+        elif isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= 4:
+            out.append(f"facet_columns must be a whole number from 1 to 4, got {n!r}")
+    lanes = raw.get("lanes")
+    if lanes is not None and not isinstance(lanes, bool):
+        out.append(f"lanes must be true or false, got {lanes!r}")
+    elif lanes:
+        if len(ys) < 2:
+            out.append("lanes needs a list of at least two y columns, one per lane")
+        if raw.get("series") is not None:
+            out.append("lanes cannot be combined with series: lanes draw one y column each")
+    if raw.get("highlight") is not None:
+        h = column("highlight")
+        if h is not None and cols[h] != "BOOL":
+            out.append(f"highlight: column {h!r} is {cols[h]}, expected BOOL (true where the period is shaded)")
+    step = raw.get("step")
+    if step is not None and not isinstance(step, bool):
+        names = step if isinstance(step, list) else [step]
+        for n in names:
+            if not isinstance(n, str) or n not in ys:
+                out.append(f"step: {n!r} is not one of this tile's y columns ({', '.join(map(str, ys))}); "
+                           "use true for every line, or name y columns")
     return out
 
 

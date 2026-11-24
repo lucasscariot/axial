@@ -5,6 +5,7 @@ import { IconDownload, IconInfo, IconInspect, IconReload } from "./Icons";
 import { setSearch } from "./router";
 import { KpiTile } from "./tiles/Kpi";
 import { ChartTile } from "./tiles/Chart";
+import { PanelsChart, panelHeight, usesPanels } from "./tiles/Panels";
 import { FunnelTile } from "./tiles/Funnel";
 import { TableTile } from "./tiles/Table";
 import { Markdown } from "./tiles/Markdown";
@@ -224,7 +225,7 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
             </div>
           </section>
         ) : (
-          <TileFrame key={i} tile={t} def={def} ds={data[t.query]} meta={meta}
+          <TileFrame key={i} tile={t} def={def} ds={data[t.query]} meta={meta} range={range}
             onInspect={() => setInspect({ kind: "latest", dashboardId: def.id, queryId: t.query, filters, requestId: data[t.query]?.data?.request_id ?? data[t.query]?.requestId ?? null })} />
         ))}
       </div>
@@ -233,9 +234,16 @@ export function DashboardPage({ id, meta }: { id: string; meta: Meta | null }) {
   );
 }
 
-function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: DashboardDef; ds?: DS; meta: Meta | null; onInspect: () => void }) {
+type Range = { start: string; end: string };
+
+function TileFrame({ tile, def, ds, meta, range, onInspect }: { tile: Tile; def: DashboardDef; ds?: DS; meta: Meta | null; range: Range; onInspect: () => void }) {
   const q = def.queries[tile.query];
-  const height = tile.height ?? DEFAULT_HEIGHT[tile.type] ?? 220;
+  const panels = !!q && (tile.type === "line" || tile.type === "bar") && usesPanels(tile, q);
+  const height = panels ? panelHeight(tile) : tile.height ?? DEFAULT_HEIGHT[tile.type] ?? 220;
+  // a time axis spans the selected dates when the query is filtered by them
+  const dr = def.date_range;
+  const xRange = dr && q && dr.start_param in q.params ? range : undefined;
+  const faceted = panels && !!tile.facet;
   const slow = !!ds?.data && ds.data.app_ms > getDisplay().slow_tile_ms;
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -249,7 +257,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
   const live = meta?.mode === "live";
   const title = tileTitle(tile, def);
   return (
-    <section className={`card tile tile-${tile.type}${slow ? " is-slow" : ""}`} style={spanStyle(tile.span)}>
+    <section className={`card tile tile-${tile.type}${faceted ? " tile-faceted" : ""}${slow ? " is-slow" : ""}`} style={spanStyle(tile.span)}>
       <header className="tile-head">
         <h2 title={q ? `${q.title} · ${q.id}` : tile.query}>{title}</h2>
         <div className="tile-meta">
@@ -269,7 +277,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
           )}
         </div>
       </header>
-      <div className="tile-body" style={tile.type === "kpi" ? undefined : { height }}>
+      <div className="tile-body" style={tile.type === "kpi" || (faceted && ds?.status === "ok") ? undefined : { height }}>
         {!q && <div className="tile-msg error">Unknown query <code>{tile.query}</code></div>}
         {q && (!ds || ds.status === "loading") && <div className={`skeleton ${tile.type === "kpi" ? "kpi-skeleton" : ""}`} />}
         {q && ds?.status === "error" && (
@@ -282,6 +290,7 @@ function TileFrame({ tile, def, ds, meta, onInspect }: { tile: Tile; def: Dashbo
           tile.type === "kpi" ? <KpiTile tile={tile} query={q} rows={ds.data.rows} /> :
           tile.type === "table" ? <TableTile tile={tile} query={q} data={ds.data} /> :
           tile.type === "funnel" ? <FunnelTile tile={tile} query={q} rows={ds.data.rows} height={height} /> :
+          panels ? <PanelsChart tile={tile} query={q} rows={ds.data.rows} height={height} range={xRange} /> :
           <ChartTile tile={tile} query={q} rows={ds.data.rows} height={height} />
         )}
       </div>

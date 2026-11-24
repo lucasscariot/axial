@@ -22,14 +22,16 @@ tiles:
 | type | required | optional |
 |---|---|---|
 | `kpi` | `query`, `value` (numeric column) | `reduce`: `single` (default; the query returns 1 row), `sum`, `min`, `max`, `first`, `last`, `count`; `format` |
-| `line` | `query`, `x`, `y` (numeric column or list) | `series` (a column to split by, with a single `y`), `format` |
-| `bar` | same as `line` | same as `line` |
+| `line` | `query`, `x`, `y` (numeric column or list) | `series` (a column to split by, with a single `y`), `format`, `facet`, `facet_columns`, `lanes`, `highlight`, `step` (see [Time series](#time-series)) |
+| `bar` | same as `line` | same as `line`, except `step` |
 | `funnel` | `query`, `x` (stage column), `y` (one numeric column) | `format` |
 | `table` | `query` | `columns` (subset and order), `formats` (per column) |
 | `text` | `markdown` (headings, lists, **bold**, *italic*, `code`, https links) | |
 
-Every tile also takes `span` (1–12, default 12), `title`, and `height` (px; defaults are
-kpi 64, charts 200, funnel 260, table 330).
+Every tile has a `type` (above) and also takes `span` (1–12, default 12), `title`, and `height` (px; defaults are
+kpi 64, charts 200, funnel 260, table 330). With `facet`, `height` is the height of each
+panel (default 140, or 100 per lane with `lanes`); a `lanes` tile without `facet` defaults to
+110 per lane.
 
 `axial check` rejects any other key, on the dashboard, in `date_range` or on a tile (for
 example `reduce` on a `line` tile, or a misspelt `height`).
@@ -49,6 +51,57 @@ subfolder is not loaded, and `axial check` reports it.
   instead of writing near-duplicates.
 - There is no `avg` reducer. Averages and rates belong in SQL.
 - `line`/`bar` with `series` shows at most 8 series and folds the rest into "Other".
+- For many entities, prefer `facet` (small multiples) at `span: 12` with `facet_columns: 2`–`4`
+  over one chart with many series. Two measures in different units go in `lanes`, never on
+  one axis.
+
+## Time series
+
+A `line` or `bar` tile whose `x` column is `TIMESTAMP` or `DATETIME` plots each row at its
+instant on a time axis, so irregular readings keep their real spacing. A `TIMESTAMP` is
+shown in the viewer's local time, as tables show it; a `DATETIME` is wall-clock time and is
+shown exactly as written. With a date filter the axis spans the selected days, from the start
+of the first to the end of the last; otherwise it fits the data. A `DATE` or any other `x`
+keeps evenly spaced categories. Tooltips show the date and time.
+
+Five optional keys make review dashboards: many entities, measures in different units, and the
+periods where something held.
+
+```yaml
+- type: line
+  query: service_readings      # service, read_at TIMESTAMP, error_rate, replicas, incident BOOL
+  x: read_at
+  y: [error_rate, replicas]
+  facet: service               # one panel per service
+  facet_columns: 2
+  lanes: true                  # error rate and replicas each get a lane with their own scale
+  highlight: incident          # shade the readings where incident is true
+  step: replicas               # replicas are set and held, not measured
+  height: 200                  # per panel
+```
+
+- `facet: <column>` draws one small panel per distinct value, titled with it, in the order
+  the rows arrive, so end the SQL with an `ORDER BY` on that column (and on `x`). Panels share
+  the x extent and, per measure, the y scale, so they compare at a glance; one legend serves
+  the tile and hovering one panel shows the same instant in every panel. A tile draws at most
+  50 panels and says how many it left out. `facet_columns` (1–4, default 1) sets the
+  columns; narrow screens use fewer. `facet` works with `series`: every panel splits by
+  `series`, with the same colour per value across panels and at most 8 series over the tile.
+- `lanes: true` with a list `y` gives each column its own lane, stacked under the previous one
+  on the same x axis, with its own y scale, label and format (the column's format, unless
+  the tile sets `format`). Use it for measures in different units; there is no second y
+  axis. It cannot be combined with `series`. Without it, a list `y` draws every column on
+  one axis.
+- `highlight: <BOOL column>` shades each run of consecutive points where the column is true,
+  from its first to its last point, behind the data in every lane. A run of one point stays
+  visible. The legend names it with the column's label and can hide it, and the tooltip says
+  when a point is inside a run. Runs are found per panel; with `series`, a point counts as
+  highlighted when any series is true at that x.
+- `step: true` (every `y`), `step: <y column>` or `step: [<y columns>]`, on `line` tiles only,
+  draws those lines as steps: each value holds until the next point. Use it for values that
+  are set and changed, like a limit or a replica count, not for measurements.
+
+These keys also work with a `DATE` or other category `x`.
 
 ## The date filter
 

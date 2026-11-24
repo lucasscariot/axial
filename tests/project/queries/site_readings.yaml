@@ -1,0 +1,5 @@
+title: Site readings
+description: Temperature and pressure per site, with the periods the heating was on.
+params: {start_date: DATE, end_date: DATE}
+columns: {site: STRING, read_at: DATETIME, temperature: FLOAT64, pressure: FLOAT64, heating: BOOL}
+labels: {heating: Heating on}

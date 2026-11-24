@@ -419,3 +419,27 @@ def test_fixture_mode_makes_up_one_row_for_a_single_value_kpi(repo):
         (repo / "fixtures" / "region_summary.json").write_text(
             '[{"region": "A", "since": "2026-11-01", "bookings": 1}, {"region": "B", "since": "2026-11-01", "bookings": 2}]')
         assert len(rows(c, "region_summary")) == 2
+
+
+def test_fixture_mode_draws_readings_for_time_series_tiles(cfg):
+    """A tile with a TIMESTAMP x and a facet gets ordered readings per facet value, with BOOL
+    columns true in contiguous runs and step columns held, instead of scattered random rows."""
+    with TestClient(create_app(cfg, mode="fixture")) as c:
+        rows = c.post("/api/datasets", json={"dashboard_id": "service_health", "query_id": "service_readings",
+                                             "filters": FILTERS}).json()["rows"]
+        exceptions = c.post("/api/datasets", json={"dashboard_id": "booking_ops", "query_id": "booking_exceptions",
+                                                   "filters": FILTERS}).json()["rows"]
+    assert len(exceptions) == 25  # a TIMESTAMP column no chart plots keeps the old shape
+    services = list(dict.fromkeys(r["service"] for r in rows))
+    assert len(services) == 8 and [r["service"] for r in rows] == sorted(r["service"] for r in rows)
+    for s in services:
+        mine = [r for r in rows if r["service"] == s]
+        times = [dt.datetime.fromisoformat(r["read_at"]) for r in mine]
+        assert times == sorted(times) and len(mine) > 40
+        assert dt.datetime(2026, 11, 1) <= times[0] and times[-1] < dt.datetime(2026, 11, 8)
+        flags = [r["incident"] for r in mine]
+        runs = sum(1 for i, f in enumerate(flags) if f and (i == 0 or not flags[i - 1]))
+        assert 1 <= runs < sum(flags) + 1 and not all(flags)
+        held = sum(1 for a, b in zip(mine, mine[1:]) if a["replicas"] == b["replicas"])
+        assert held > len(mine) * 0.7  # a step column changes now and then, not every reading
+        assert all(0 <= r["error_rate"] < 1 and isinstance(r["replicas"], int) for r in mine)
