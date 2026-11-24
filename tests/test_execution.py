@@ -442,4 +442,9 @@ def test_fixture_mode_draws_readings_for_time_series_tiles(cfg):
         assert 1 <= runs < sum(flags) + 1 and not all(flags)
         held = sum(1 for a, b in zip(mine, mine[1:]) if a["replicas"] == b["replicas"])
         assert held > len(mine) * 0.7  # a step column changes now and then, not every reading
-        assert all(0 <= r["error_rate"] < 1 and isinstance(r["replicas"], int) for r in mine)
+        assert all(r["error_rate"] is None or 0 <= r["error_rate"] < 1 for r in mine)
+        assert all(isinstance(r["replicas"], int) for r in mine)  # held values have no dropouts
+    # dropouts leave nulls, and now and then a lone reading between them that a chart must still show
+    rates = [r["error_rate"] for r in rows]
+    lone = [i for i in range(1, len(rates) - 1) if rates[i] is not None and rates[i - 1] is None and rates[i + 1] is None]
+    assert rates.count(None) > 10 and lone

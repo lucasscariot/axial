@@ -1,6 +1,6 @@
 title: Service readings
 description: Error rate and replica count per service, with the periods an incident was open.
 params: {start_date: DATE, end_date: DATE}
-columns: {service: STRING, read_at: TIMESTAMP, error_rate: FLOAT64, replicas: INT64, incident: BOOL}
-formats: {error_rate: percent, replicas: integer}
+columns: {service: STRING, read_at: TIMESTAMP, error_rate: FLOAT64, latency: FLOAT64, replicas: INT64, incident: BOOL}
+formats: {error_rate: percent, latency: duration, replicas: integer}
 labels: {incident: Incident open}

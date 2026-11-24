@@ -148,7 +148,7 @@ def test_time_series_options_are_checked(repo):
     assert found(base + ", facet: service, facet_columns: 2, lanes: true, highlight: incident, step: replicas}") == []
     assert found(base + ", step: true, facet: service}") == []
     assert found(base + ", facet: region}") == [
-        "facet: column 'region' is not in query service_readings columns (service, read_at, error_rate, replicas, incident)"]
+        "facet: column 'region' is not in query service_readings columns (service, read_at, error_rate, latency, replicas, incident)"]
     assert found(base + ", facet: replicas}") == [
         "facet: column 'replicas' is already the x, y or series of this tile; facet by another column"]
     assert found(base + ", facet_columns: 2}") == ["facet_columns only applies with facet"]

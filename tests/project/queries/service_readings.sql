@@ -3,6 +3,7 @@ SELECT
   service,
   read_at,
   error_rate,
+  latency,
   replicas,
   incident
 FROM `metrics.service_readings`

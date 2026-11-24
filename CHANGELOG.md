@@ -71,6 +71,9 @@ is 0.x, a minor bump (0.1 → 0.2) may need project changes. Each release lists 
 
 ### Bug Fixes
 
+- Line and bar charts with a `duration` axis step by whole time units (30 s, 5 min, 2 h, 1 day)
+  instead of splits such as 3m 20s. A line value with nulls on both sides is drawn as a dot;
+  it used to disappear.
 - Fixture mode makes up a single row for a query that a KPI tile reads with `reduce: single`.
   It used to make up 25 rows, or one per day, whenever such a query also returned a label or
   a date, so the tile showed "Expected 1 row" unless the project saved a fixture for it.

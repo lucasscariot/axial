@@ -15,6 +15,6 @@ tiles:
     span: 12
   - {type: line, query: site_readings, x: read_at, y: [temperature, pressure], lanes: true, facet: site,
      facet_columns: 4, highlight: heating, title: Temperature and pressure per site, span: 12}
-  - {type: line, query: service_readings, x: read_at, y: error_rate, series: service, title: Error rate, span: 6}
+  - {type: line, query: service_readings, x: read_at, y: latency, series: service, title: Latency, span: 6}
   - {type: bar, query: site_readings, x: read_at, y: pressure, facet: site, facet_columns: 2, height: 90,
      title: Pressure per site, span: 6}

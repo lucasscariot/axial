@@ -93,8 +93,8 @@ periods where something held.
   axis. It cannot be combined with `series`. Without it, a list `y` draws every column on
   one axis.
 - `highlight: <BOOL column>` shades each run of consecutive points where the column is true,
-  from its first to its last point, behind the data in every lane. A run of one point stays
-  visible. The legend names it with the column's label and can hide it, and the tooltip says
+  from its first to its last point, behind the data in every lane, with a thin edge at its
+  start and end. A run of one point stays visible. The legend names it with the column's label and can hide it, and the tooltip says
   when a point is inside a run. Runs are found per panel; with `series`, a point counts as
   highlighted when any series is true at that x.
 - `step: true` (every `y`), `step: <y column>` or `step: [<y columns>]`, on `line` tiles only,

@@ -5,14 +5,14 @@
 // x extent, every y scale and the left gutter, so the same pixel is the same instant everywhere.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, CustomChart, LineChart } from "echarts/charts";
+import { BarChart, CustomChart, LineChart, ScatterChart } from "echarts/charts";
 import { GraphicComponent, GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { QueryMeta, Row, Tile } from "../api";
 import { defaultFormat, fmt, fmtTime, labelOf, toMs } from "../format";
-import { MAX_SERIES, cssVar, esc, fontsReady, useThemeChange, withAlpha } from "./Chart";
+import { MAX_SERIES, cssVar, esc, fontsReady, isolated, niceScale, useThemeChange, withAlpha } from "./Chart";
 
-echarts.use([LineChart, BarChart, CustomChart, GridComponent, GraphicComponent, TooltipComponent, LegendComponent, SVGRenderer]);
+echarts.use([LineChart, BarChart, CustomChart, ScatterChart, GridComponent, GraphicComponent, TooltipComponent, LegendComponent, SVGRenderer]);
 
 export const MAX_FACETS = 50;
 const TIME = new Set(["TIMESTAMP", "DATETIME"]);
@@ -127,19 +127,9 @@ function buildModel(tile: Tile, query: QueryMeta, rows: Row[], range?: { start: 
 
 type Scale = { min: number; max: number; step: number; format: string };
 
-/** One y scale per lane over every panel, with round steps, so panels compare at a glance. */
-function niceScale(lo: number, hi: number, format: string): Omit<Scale, "format"> {
-  lo = Math.min(0, lo); hi = Math.max(0, hi);
-  if (!(hi > lo)) hi = lo + 1;
-  const raw = (hi - lo) / 4, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
-  const whole = format === "integer";  // counts step by whole numbers, never 2.5
-  let step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 && !whole ? 2.5 : f <= 5 ? 5 : 10) * mag;
-  if (whole && step < 1) step = 1;
-  const round = (v: number) => Number(v.toPrecision(12));
-  return { min: round(Math.floor(lo / step + 1e-9) * step), max: round(Math.ceil(hi / step - 1e-9) * step), step };
-}
-
+/** One y scale per lane over every panel, so panels compare at a glance. */
 function laneScales(m: Model, hidden: Record<string, boolean>): Scale[] {
+  if (m.lines.length === 0) return []; // a series split over no rows has no lines, and nothing to draw
   return Array.from({ length: m.laneCount }, (_, lane) => {
     let lo = Infinity, hi = -Infinity;
     const lines = m.lines.filter((l) => l.lane === lane);
@@ -188,7 +178,8 @@ export function PanelsChart({ tile, query, rows, height, range }: Props) {
   const isBar = tile.type === "bar";
   const legendLines = model.lanes || model.lines.length < 2 ? [] : model.lines;
   const faceted = !!tile.facet;
-  const cols = faceted ? Math.min(4, Math.max(1, tile.facet_columns ?? 1)) : 1;
+  // fewer panels than columns share the full width rather than leaving empty columns
+  const cols = faceted ? Math.min(4, Math.max(1, tile.facet_columns ?? 1), model.panels.length) : 1;
   const each = (fn: (c: echarts.ECharts) => void) => charts.current.forEach(fn);
   return (
     <div className={`chart${faceted ? " chart-faceted" : ""}`} style={faceted ? undefined : { height }}>
@@ -275,7 +266,7 @@ function PanelChart({ tile, model: m, panel, scales, hidden, shade, height, host
     const inRun = (at: number) => panel.runs.some(([a, b]) => at >= a && at <= b);
 
     const tooltipHtml = (params: any) => {
-      const list = (Array.isArray(params) ? params : [params]).filter((p: any) => p.seriesType !== "custom");
+      const list = (Array.isArray(params) ? params : [params]).filter((p: any) => p.seriesType === "line" || p.seriesType === "bar");
       if (!list.length) return "";
       const p0 = list[0];
       const at = m.time ? Number(p0.value[0]) : p0.dataIndex;
@@ -309,7 +300,9 @@ function PanelChart({ tile, model: m, panel, scales, hidden, shade, height, host
         if (b <= a) return null;
         return { type: "group", children: lanes.flatMap((g) => [
           { type: "rect", shape: { x: a, y: g.top, width: b - a, height: g.height }, style: { fill: wash } },
-          { type: "rect", shape: { x: a, y: g.top + g.height - 2, width: b - a, height: 2 }, style: { fill: edge } },
+          // thin edges at the run's start and end, never on the baseline where a zero reading lies
+          { type: "rect", shape: { x: a, y: g.top, width: 1, height: g.height }, style: { fill: edge } },
+          { type: "rect", shape: { x: b - 1, y: g.top, width: 1, height: g.height }, style: { fill: edge } },
         ]) };
       },
     }] : [];
@@ -353,14 +346,23 @@ function PanelChart({ tile, model: m, panel, scales, hidden, shade, height, host
         if (isBar) return { ...common, type: "bar", barMaxWidth: 24, barGap: "12%", barCategoryGap: "32%", large: data.length > 2000,
           itemStyle: { color, borderRadius: m.time ? [1, 1, 0, 0] : [4, 4, 0, 0] }, emphasis: { itemStyle: { opacity: 0.85 } } };
         const alone = perLane[l.lane] === 1;
-        return { ...common, type: "line", connectNulls: false, step: l.step ? "end" : false, sampling: l.step ? undefined : "lttb",
+        const gaps = data.some((d) => (Array.isArray(d) ? d[1] : d) === null);
+        return { ...common, type: "line", connectNulls: false, step: l.step ? "end" : false,
+          sampling: l.step || gaps ? undefined : "lttb", // sampling could drop a reading between gaps
           showSymbol: m.few, symbol: "circle", symbolSize: 8,
           itemStyle: { color, borderColor: surface, borderWidth: 2 },
           lineStyle: { width: 2, cap: "round", join: "round" },
           emphasis: { scale: false, focus: alone ? "none" : "series" },
           ...(alone ? { areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: withAlpha(color, 0.1) }, { offset: 1, color: withAlpha(color, 0) }]) } } : {}) };
-      }), ...highlightSeries],
+      }), ...(isBar || m.few ? [] : m.lines.map((l) => {
+        // A reading with no neighbour to connect to draws no line; give it a dot so it is not lost.
+        const d = panel.data[l.key];
+        const lone = isolated(m.time ? (d as [number, Point][]).map((p) => p[1]) : d as Point[]);
+        return { type: "scatter", name: l.key, xAxisIndex: l.lane, yAxisIndex: l.lane, silent: true, z: 3,
+          symbolSize: 6, itemStyle: { color: colors[l.color] },
+          data: m.time ? (d as [number, Point][]).filter((_, i) => lone[i]) : (d as Point[]).map((v, i) => (lone[i] ? v : null)) };
+      })), ...highlightSeries],
     }, true);
   };
 

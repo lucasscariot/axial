@@ -59,8 +59,9 @@ def _dim(c: str, i: int) -> str:
 
 
 def _readings(q: Query, ts: TimeSeries, rng: random.Random, t_start: dt.datetime, t_end: dt.datetime) -> list[dict]:
-    """Irregular readings per group value: smooth numbers with a daily cycle, BOOL columns true in
-    a few contiguous runs (when the numbers rise), step columns held between occasional changes."""
+    """Irregular readings per group value: smooth numbers with a daily cycle and the odd dropout
+    (nulls around lone readings), BOOL columns true in a few contiguous runs (when the numbers
+    rise), step columns held between occasional changes."""
     combos: list[tuple[str, ...]] = [()]
     for g, n in ts.groups.items():
         combos = [c + (_dim(g, i),) for c in combos for i in range(n)]
@@ -75,7 +76,7 @@ def _readings(q: Query, ts: TimeSeries, rng: random.Random, t_start: dt.datetime
                  if q.formats.get(c) == "duration" else rng.uniform(2, 6) if c in ts.step else rng.uniform(50, 500)
                  for c in nums}
         held = dict(level)
-        walk, phase, run_left, runs = 0.0, rng.uniform(0, 6.3), 0, 0
+        walk, phase, run_left, runs, gap_left = 0.0, rng.uniform(0, 6.3), 0, 0, 0
         t = rng.uniform(0, every)
         group_rows: list[dict] = []
         while t < span:
@@ -83,6 +84,10 @@ def _readings(q: Query, ts: TimeSeries, rng: random.Random, t_start: dt.datetime
                 run_left, runs = rng.choice((1, 3, 5, 8, 12)), runs + 1
             in_run = run_left > 0
             run_left = max(0, run_left - 1)
+            if gap_left == 0 and rng.random() < 0.03:
+                gap_left = rng.randint(3, 7)  # a sensor dropout: mostly nulls, with the odd lone reading
+            missing = gap_left > 0 and rng.random() < 0.75
+            gap_left = max(0, gap_left - 1)
             walk = 0.85 * walk + rng.gauss(0, 0.06)
             when = t_start + dt.timedelta(seconds=int(t))
             cycle = 0.25 * math.sin(phase + 2 * math.pi * t / 86400)
@@ -96,7 +101,8 @@ def _readings(q: Query, ts: TimeSeries, rng: random.Random, t_start: dt.datetime
                     v = level[c] * max(0.05, 1 + cycle + walk) * (1.7 if in_run else 1)
                 if q.formats.get(c) == "percent":
                     v = min(v, 0.99)
-                row[c] = round(v) if q.columns[c] == "INT64" else round(v, 4 if q.formats.get(c) == "percent" else 2)
+                row[c] = None if missing and c not in ts.step else \
+                    round(v) if q.columns[c] == "INT64" else round(v, 4 if q.formats.get(c) == "percent" else 2)
             for c in bools:
                 row[c] = in_run
             for c, ty in q.columns.items():
